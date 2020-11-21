@@ -17,6 +17,7 @@ end
 
 # x = [x, y, psi, vx, vy, r, delta, T]
 function bicycle_model(x, u, p)
+    dx = Array{Float32}(undef, 8)
     # u = [v_theta, accel, steer_target]
     # x = [x, y, psi, vx, vy, r, theta, steer_angle]
 
@@ -62,4 +63,6 @@ function bicycle_model(x, u, p)
     dx[6] = a_yaw
     dx[7] = v_theta
     dx[8] = delta
+
+    return dx
 end
