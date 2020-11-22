@@ -25,6 +25,12 @@ nn = Chain(
 
 loss() = 0 # TODO replace this
 
+############ L2 Loss based on state params #############
+function loss_L2()
+
+
+end
+
 opt = Flux.Descent(0.01)
 data = Iterators.repeated((), 5000)
 iter = 0
