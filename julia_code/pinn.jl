@@ -55,10 +55,10 @@ u_der[3] = r
 u_der[4] = (m^(-1))*(F_x - F_ry*sin(u[7]) + m*u[5]*u[6])
 u_der[5] = (m^(-1))*(F_ry + F_ry*cos(u[7]) - m*u[4]*u[6])
 u_der[6] = (I_z^(-1))*(F_Fy*l_f*cos(u[7]) - F_ry*l_r - m*u[4]*u[6])
-u_der[7] = del_del # TODO define change in del
-u_der[8] = del_T # TODO define change in T
+u_der[7] = del_del # TODO ignore external commands
+u_der[8] = del_T # TODO ignore external commands
 
-solve_RK(u_der, init_params) # TODO implement RK solver for this 
+solve_RK(u_der, init_params,step_iter=1) # TODO implement RK solver for this
 
 end
 
