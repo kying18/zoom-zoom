@@ -10,6 +10,9 @@ Pkg.activate(".")
 # Pkg.add("DiffEqSensitivity")
 using DiffEqFlux, Flux, Optim, OrdinaryDiffEq, Plots, Statistics, DiffEqSensitivity,StaticArrays
 
+include("./bicycle_model.jl")
+
+
 # 21 inputs for each input item in our x vector, u vector, p vector
 # 8 outputs for each output item in the newly predicted y vector
 
@@ -58,12 +61,29 @@ u_der[6] = (I_z^(-1))*(F_Fy*l_f*cos(u[7]) - F_ry*l_r - m*u[4]*u[6])
 u_der[7] = del_del # TODO ignore external commands
 u_der[8] = del_T # TODO ignore external commands
 
+# i think we can probably use the bicycle model defined in bicycle_model.jl?
+# then you can do solve_bicycle_model (see below) - actual x here to calculate loss fxn
+
 solve_RK(u_der, init_params,step_iter=1) # TODO implement RK solver for this
 
 end
 
+function solve_bicycle_model(x, u, p, t)
+  u = [x ; u]  # TODO: figure out dimensionality here (whehter this should be vcat or hcat)
 
+  # this u will be a vector of x (ie x, y, psi, etc.) and u (user input) (x)
+  # x, y, psi, vx, vy, r, theta, steer = x
+  # v_theta, D, delta = u  # velocity along path, accel command, commanded steer rate 
+  # u[1:8] = x, y, psi, vx, vy, r, theta, steer
+  # u[9:11] = v_theta, D, delta
 
+  tspan = (0.0, 1.0) # TODO.. make this one timestep?
+  prob = ODEProblem(bicycle_model, u, tspan, p)  # this may not be properly imported, not sure
+  solution = solve(prob, DP5(), saveat=0.25)
+
+  # TODO: return last element of solution
+
+end
 
 
 opt = Flux.Descent(0.01)
