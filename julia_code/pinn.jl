@@ -82,6 +82,8 @@ function solve_bicycle_model(x, u, p, t)
   solution = solve(prob, DP5(), saveat=0.25)
 
   # TODO: return last element of solution
+  # not sure about syntax
+  # maybe solution[5] ??
 
 end
 
