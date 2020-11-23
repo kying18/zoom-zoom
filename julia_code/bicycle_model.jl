@@ -75,13 +75,15 @@ function gen_data(x0, g, p, collect_at=0:1:10)
     xs=Array{Float32,2}(undef, len,8)
     xs[1,:]=x0
     dxs=Array{Float32,2}(undef, len,8)
+    inputs=Array{Float32,2}(undef, len,3)
 
     for itr in 2:len
-        dxs[itr,:]=bicycle_model(xs[itr-1,:], g(collect_at[itr]), p)
+        inputs[itr-1,:]=g(collect_at[itr-1])
+        dxs[itr,:]=bicycle_model(xs[itr-1,:], inputs[itr-1,:], p)
         xs[itr,:].=xs[itr-1].+dxs[itr]
     end
 
-    return [collect_at,xs, dxs]
+    return [collect_at, xs, dxs, inputs]
 
 end
 
