@@ -2,8 +2,9 @@ cd(@__DIR__)
 using Pkg
 Pkg.activate(".")
 
-tire_force(alpha, Fz, p) = -alpha .* p[6] .* Fz/p[7]
-
+function tire_force(alpha, Fz, p) 
+    -alpha .* p[6] .* Fz/p[7]
+end
 function normal_force(x, u, p)
     m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g = p
     # Traction due to aero
@@ -11,12 +12,12 @@ function normal_force(x, u, p)
     F_lift = 0.5 * rho * cla * vx^2;
     FzF = -( lr * (m * g + F_lift))/ l;
     FzR = -( lf*(m * g + F_lift)) / l;
-
     return FzF, FzR
 end
 
 # x = [x, y, psi, vx, vy, r, delta, T]
 function bicycle_model(x, u, p)
+
     dx = Array{Float32}(undef, 8)
     # u = [v_theta, accel, steer_target]
     # x = [x, y, psi, vx, vy, r, theta, steer_angle]
@@ -24,6 +25,9 @@ function bicycle_model(x, u, p)
     # params of the car
     # mass, length, length front, length rear, yaw moment of inertia
     m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g = p
+
+    # estimate normal
+    FzF, FzR = normal_force(x, u, p) # TODO
 
     # unpack variables
     # x, y, psi, vx, vy, r, steer, T = x
@@ -35,8 +39,6 @@ function bicycle_model(x, u, p)
     alpha_f = atan((vy + r * lf) / vx) + steer
     alpha_r = atan((vy - r * lr) / vx)
 
-    # estimate normal
-    FzF, FzR = normal_force(x, u, p) # TODO
 
     # compute tire forces
     F_yf = tire_force(alpha_f, FzF, p)
@@ -51,6 +53,7 @@ function bicycle_model(x, u, p)
 
     # accel
     ax = 1/m * (F_xr + F_xf * cos(steer) + F_yf * sin(steer)) + r * vy
+
     ay = 1/m * (F_yr - F_xf * sin(steer) + F_yf * cos(steer)) - r * vx
     a_yaw = 1/Iz * (-lf * F_xf * sin(steer) + lf * F_yf * cos(steer) - lr * F_yr)
 
@@ -66,3 +69,33 @@ function bicycle_model(x, u, p)
 
     return dx
 end
+
+function gen_data(x0, g, p, collect_at=0:1:10)
+    len=length(collect_at)
+    xs=Array{Float32,2}(undef, len,8)
+    xs[1,:]=x0
+    dxs=Array{Float32,2}(undef, len,8)
+
+    for itr in 2:len
+        dxs[itr,:]=bicycle_model(xs[itr-1,:], g(collect_at[itr]), p)
+        xs[itr,:].=xs[itr-1].+dxs[itr]
+    end
+
+    return [collect_at,xs, dxs]
+
+end
+
+
+function example_g(t)
+    
+    [sin(t), t, cos(t)]
+
+end
+
+x0 = [1,2,1,3,1,1,1,1]
+p = [1292.2, 3,1.006,1.534,0.5,8,0.5,0.1,0.2,0.1]
+data = gen_data(x0,example_g,p)
+
+using Plots
+plot(data[1],data[2][:,1])
+plot!(data[1],data[2][:,2])
