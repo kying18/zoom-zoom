@@ -2,39 +2,81 @@ cd(@__DIR__)
 using Pkg
 Pkg.activate(".")
 
+using DifferentialEquations
+
 function tire_force(alpha, Fz, p) 
     -alpha .* p[6] .* Fz/p[7]
 end
-function normal_force(x, u, p)
+function normal_force(u, command, p)
     m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g = p
     # Traction due to aero
-    vx = x[4]; # Lon Velocity
+    vx = u[4]; # Lon Velocity
     F_lift = 0.5 * rho * cla * vx^2;
     FzF = -( lr * (m * g + F_lift))/ l;
     FzR = -( lf*(m * g + F_lift)) / l;
     return FzF, FzR
 end
 
-# x = [x, y, psi, vx, vy, r, delta, T]
-function bicycle_model(x, u, p)
 
-    dx = Array{Float32}(undef, 8)
-    # u = [v_theta, accel, steer_target]
-    # x = [x, y, psi, vx, vy, r, theta, steer_angle]
+#max tire force = mass*10-15 ms/s^2
+
+
+#=
+command(t) = [
+    accel = global acceleration ~ from -20 to 15 m/s/s
+    steer_rate = steer rate along car axis ~ ?
+    ]
+=#
+function com(t)
+    [5,0.1]
+end
+
+#=
+u= [x = global x value ~ 0
+    y = global y value ~ 0
+    psi = global car aligment yaw value ~ 0
+    vx = forward velocity of the car along its axis in global refrence frame ~ 5
+    vy = sideways velocity of the car along its axis in global refrence frame ~ 0
+    r = global yaw rate (dpsi/dt) ~0
+    steer = car steering angle relative to its axis ~ 0 between -.26 and 0.26
+    com_store1 = command accel at time step
+    com_store2 = command steer_rate at time step
+    ]
+=#
+u0=[0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0]
+
+#=
+p= [
+    m = mass ~ 350kg
+    l = car length ~ 3m
+    lf = forward dist from center of mass ~ 1.5m
+    lr = rear dist from  center of mass ~ 1.5m
+    Iz = yaw moment of inertia ~ 550
+    cornering_stiff = sample cornering stiffness ~ 20,00 or 10,000
+    sample_fz = sample downard force at observed cornering stiffness ~ 3500
+    rho = density of air ~ 1.2
+    cla = downforce for velocity ~ +/- 0.5 (should increase downforce with sped)
+    g = gravity ~ 9.8 m/s/s
+
+    ]
+=#
+p=[350,3,1.5,1.5,550,10000,3500,1.2,-0.5,9.8]
+
+function bicycle_model!(du, u, p, command)
+
 
     # params of the car
-    # mass, length, length front, length rear, yaw moment of inertia
     m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g = p
 
+  
     # estimate normal
-    FzF, FzR = normal_force(x, u, p) # TODO
+    FzF, FzR = normal_force(u, command, p) # TODO
 
     # unpack variables
-    # x, y, psi, vx, vy, r, steer, T = x
-    # above is from the paper, but let's use the matlab code instead
-    x, y, psi, vx, vy, r, theta, steer = x
-    v_theta, D, delta = u  # velocity along path, accel command, commanded steer rate 
-
+    x, y, psi, vx, vy, r, steer = u[1:7]
+    D, delta = command  # velocity along path, accel command, commanded steer rate 
+    u[8]=D
+    u[9]=delta
     # compute slip angles
     alpha_f = atan((vy + r * lf) / vx) + steer
     alpha_r = atan((vy - r * lr) / vx)
@@ -53,51 +95,50 @@ function bicycle_model(x, u, p)
 
     # accel
     ax = 1/m * (F_xr + F_xf * cos(steer) + F_yf * sin(steer)) + r * vy
-
     ay = 1/m * (F_yr - F_xf * sin(steer) + F_yf * cos(steer)) - r * vx
     a_yaw = 1/Iz * (-lf * F_xf * sin(steer) + lf * F_yf * cos(steer) - lr * F_yr)
 
     # bicycle model
-    dx[1] = vx * cos(psi) - vy * sin(psi)  # sin/cos(x), x should be radians.. not sure if our data is in deg/rad
-    dx[2] = vx * sin(psi) + vy * cos(psi)
-    dx[3] = r
-    dx[4] = ax
-    dx[5] = ay
-    dx[6] = a_yaw
-    dx[7] = v_theta
-    dx[8] = delta
+    du[1] = vx * cos(psi) - vy * sin(psi)  # sin/cos(x), x should be radians.. not sure if our data is in deg/rad
+    du[2] = vx * sin(psi) + vy * cos(psi)
+    du[3] = r
+    du[4] = ax
+    du[5] = ay
+    du[6] = a_yaw
+    du[7] = delta
 
-    return dx
 end
 
-function gen_data(x0, g, p, collect_at=0:1:10)
-    len=length(collect_at)
-    xs=Array{Float32,2}(undef, len,8)
-    xs[1,:]=x0
-    dxs=Array{Float32,2}(undef, len,8)
-    inputs=Array{Float32,2}(undef, len,3)
+function diffeq_bicycle_model(du, u, p,t)
+    bicycle_model!(du, u, p, com(t))
+end
 
-    for itr in 2:len
-        inputs[itr-1,:]=g(collect_at[itr-1])
-        dxs[itr,:]=bicycle_model(xs[itr-1,:], inputs[itr-1,:], p)
-        xs[itr,:].=xs[itr-1].+dxs[itr]
+#=
+#Check that this works vv
+
+tspan = (0.0, 20.0)
+prob=ODEProblem(diffeq_bicycle_model,u0,tspan,p) #doesn't set dt and uses adaptive time steping
+sol = solve(prob)
+
+#plot path of car
+plot(sol, vars=(1,2))
+
+
+=#
+
+#collect data
+tspan = (0.0, 0.5)
+
+data=[]
+for i in 1:10
+    println(i)
+    function com(t)
+        [5,0.1] .* 2 .*(rand(Float64, (2)).-0.5)
     end
+    p=[350,3,1.5,1.5,550,10000,3500,1.2,-0.5,9.8].* 2 .*(rand(Float64, (length(p))).-0.5) #wrong, some of the params are linked to eachother & g=9.8
+    u0=[0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (length(u0))).-0.5)
 
-    return [collect_at, xs, dxs, inputs]
-
+    prob=ODEProblem(diffeq_bicycle_model,u0,tspan,p,dt=0.001,saveat=0.1) 
+    sol = solve(prob)
+    push!(data,[p,u0,sol.t, sol.u])
 end
-
-
-function example_g(t)
-    
-    [sin(t), t, cos(t)]
-
-end
-
-x0 = [1,2,1,3,1,1,1,1]
-p = [1292.2, 3,1.006,1.534,0.5,8,0.5,0.1,0.2,0.1]
-data = gen_data(x0,example_g,p)
-
-using Plots
-plot(data[1],data[2][:,1])
-plot!(data[1],data[2][:,2])
