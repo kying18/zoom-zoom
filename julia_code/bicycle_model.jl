@@ -4,8 +4,9 @@ Pkg.activate(".")
 using Random
 using Distributions
 using DifferentialEquations
+using Sobol
 
-function tire_force(alpha, Fz, p) 
+function tire_force(alpha, Fz, p)
     -alpha .* p[6] .* Fz/p[7]
 end
 
@@ -19,25 +20,23 @@ function normal_force(u, command, p)
     return FzF, FzR
 end
 
-
 #max tire force = mass*10-15 ms/s^2
 
-
-
-
+"""
+Mutating bicycle model to use with DifferentialEquations.jl Takes in u, a vector
+of the states and the commands. (9x1)
+"""
 function bicycle_model!(du, u, p, command)
-
 
     # params of the car
     m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g = p
 
-  
     # estimate normal
     FzF, FzR = normal_force(u, command, p) # TODO
 
     # unpack variables
     x, y, psi, vx, vy, r, steer = u[1:7]
-    D, delta = command  # velocity along path, accel command, commanded steer rate 
+    D, delta = command  # velocity along path, accel command, commanded steer rate
     u[8]=D
     u[9]=delta
     # compute slip angles
@@ -72,15 +71,61 @@ function bicycle_model!(du, u, p, command)
 
 end
 
+"""
+Non-mutating bicycle model to use with random data generation. Takes in u, a
+vector of the states. (7x1)
+"""
+function bicycle_model(u, p, command)
+    # Create an array to store du in.
+    du = Vector{Float64}(undef, length(u))
+
+    # params of the car
+    m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g = p
+
+    # estimate normal
+    FzF, FzR = normal_force(u, command, p) # TODO
+
+    # unpack variables
+    x, y, psi, vx, vy, r, steer = u[1:7]
+    D, delta = command  # velocity along path, accel command, commanded steer rate
+
+    # compute slip angles
+    alpha_f = atan((vy + r * lf) / vx) + steer
+    alpha_r = atan((vy - r * lr) / vx)
+
+    # compute tire forces
+    F_yf = tire_force(alpha_f, FzF, p)
+    F_yr = tire_force(alpha_r, FzR, p)
+
+    # torque to force
+    F_net = m * D
+
+    # torque vectoring
+    F_xf = lf / l * F_net
+    F_xr = lr / l * F_net
+
+    # accel
+    ax = 1/m * (F_xr + F_xf * cos(steer) + F_yf * sin(steer)) + r * vy
+    ay = 1/m * (F_yr - F_xf * sin(steer) + F_yf * cos(steer)) - r * vx
+    a_yaw = 1/Iz * (-lf * F_xf * sin(steer) + lf * F_yf * cos(steer) - lr * F_yr)
+
+    # bicycle model
+    du[1] = vx * cos(psi) - vy * sin(psi)  # sin/cos(x), x should be radians.. not sure if our data is in deg/rad
+    du[2] = vx * sin(psi) + vy * cos(psi)
+    du[3] = r
+    du[4] = ax
+    du[5] = ay
+    du[6] = a_yaw
+    du[7] = delta
+    return du
+end
+
 #=
 command(t) = [
     accel = global acceleration ~ from -20 to 15 m/s/s
-    steer_rate = steer rate along car axis ~ ?
+    steer_rate = steer rate along car axis from -0.26 to 0.26
     ]
 =#
-function com(t)
-    [5,0.1]
-end
 
 #=
 u= [x = global x value ~ 0
@@ -104,19 +149,18 @@ p= [
     lr = rear dist from  center of mass ~ 1.5m
     Iz = yaw moment of inertia ~ 550
     cornering_stiff = sample cornering stiffness ~ 20,00 or 10,000
-    sample_fz = sample downard force at observed cornering stiffness ~ 3500
+    sample_fz = sample downard force at observed cornering stiffness ~ 3430
     rho = density of air ~ 1.2
     cla = downforce for velocity ~ +/- 0.5 (should increase downforce with sped)
     g = gravity ~ 9.8 m/s/s
 
     ]
 =#
-p=[350,3,1.5,1.5,550,10000,3500,1.2,-0.5,9.8]
+p=[350.0,3.0,1.5,1.5,550.0,10000.0,3430.0,1.2,-0.5,9.8]
 
 function diffeq_bicycle_model(du, u, p,t)
     bicycle_model!(du, u, p, com(t))
 end
-
 
 
 #=
@@ -128,41 +172,14 @@ sol = solve(prob)
 
 #plot path of car
 plot(sol, vars=(1,2))
-=# 
+=#
 
-#Alternative method for generation generation
+#Alternative method for data generation
 
 #=
-"""
-    percent_noise_flat(x, percent_noise)
-
-Computes noise by adding or subtracting a specified percentage of the provided
-x array as error: noisy_x = x +/- (percent)*x
-"""
-function percent_noise_flat(x, percent_noise)
-    # Create array of +/-1 the size of x
-    noise = rand([Float64(-1.0),Float64(1.0)],length(x))
-    # Multiply the percent noise by the x values, and then multiply by the
-    # +/- noise array. Add to the x values.
-    noisy_x = x + percent_noise * x .* noise
-    return noisy_x
-end
 
 """
     percent_noise_normal(x, percent_noise)
-
-Adds normally distributed noise by calculating noise N(0.0, percent_noise) and
-computing noisy_x = x + N(0.0, percent_noise)*x.
-"""
-function percent_noise_normal(x, percent_noise)
-    # Create an array the size of x
-    noisy_x = Vector{Float64}(undef,length(x))
-    # For each x, sample from the N(x, percent*x) distribution
-    for i in 1:length(x)
-        noisy_x[i] = x[i] * (Float64(1.0) + rand(Normal(0.0,percent_noise)))
-    end
-    return noisy_x
-end
 
 #test_xs[1,:]
 #percent_noise_normal(test_xs[1,:],0.05)
@@ -287,7 +304,213 @@ for i in 1:10
     p=[350,3,1.5,1.5,550,10000,3500,1.2,-0.5,9.8].* 2 .*(rand(Float64, (length(p))).-0.5) #wrong, some of the params are linked to eachother & g=9.8
     u0=[0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (length(u0))).-0.5)
 
-    prob=ODEProblem(diffeq_bicycle_model,u0,tspan,p,dt=0.001,saveat=0.1) 
+    prob=ODEProblem(diffeq_bicycle_model,u0,tspan,p,dt=0.001,saveat=0.1)
     sol = solve(prob)
     push!(data,[p,u0,sol.t, sol.u])
 end
+
+#=
+    Random data generation
+    # varied states: psi, vx, vy, r, steer
+    # varied commands: D (acceleration), delta (steering rate)
+    # varied parameters: cornering_stiff
+    # integration with Dormand Prince method
+    # suggested step size = 0.001
+=#
+
+#=
+    Dormand Prince Method
+=#
+# Define the coefficients for the Dormand Prince method
+c = [0, 1.0/5.0, 3.0/10.0, 4.0/5.0, 8.0/9.0, 1.0, 1.0]
+b = [35.0/384.0, 0.0, 500.0/1113.0, 125.0/192.0, -2187.0/6784.0, 11.0/84.0, 0.0]
+a2 = 1.0/5.0
+a3 = [3.0/40.0, 9.0/40.0]
+a4 = [44.0/45.0, -56.0/15.0, 32.0/9.0]
+a5 = [19372.0/6561.0, -25360.0/2187.0, 64448.0/6561.0, -212.0/729.0]
+a6 = [9017.0/3168.0, -355.0/33.0, 46732.0/5247.0, 49.0/176.0, -5103.0/18656.0]
+a7 = [35.0/384.0, 0.0, 500.0/1113.0, 125.0/192.0, -2187.0/6784.0, 11.0/84.0]
+
+# A function that calculates one step using the Dormand Prince method.
+function dormandprince(f, u, p, command, dt)
+    # Calculate the stages
+    k1 = f(u,p,command)
+    k2 = f(muladd(dt,a2*k1,u),p,command)
+    k3 = f(muladd(dt,muladd(a3[1],k1,a3[2]*k2),u),p,command)
+    k4 = f(muladd(dt,muladd(a4[1],k1,muladd(a4[2],k2,a4[3]*k3)),u),p,command)
+    k5 = f(muladd(dt,muladd(a5[1],k1,muladd(a5[2],k2,muladd(a5[3],k3,a5[4]*k4))),u),p,command)
+    k6 = f(muladd(dt,muladd(a6[1],k1,muladd(a6[2],k2,muladd(a6[3],k3,muladd(a6[4],k4,a6[5]*k5)))),u),p,command)
+    # The last step is only needed for error estimation
+    # Calculate the next u
+    u_next = muladd(dt,muladd(b[1],k1,muladd(b[3],k3,muladd(b[4],k4,muladd(b[5],k5,b[6]*k6)))),u)
+    # Return the next u
+    out=u_next
+end
+
+#=
+Noise functions
+=#
+"""
+    flat_noise(u, percent_noise)
+
+Computes noise by adding or subtracting a specified percentage of the provided
+state array as error: noisy_u = u +/- (percent)*u
+Takes in u, a state vector, and percent_noise, a float. Outputs noisy_u, the
+state vector with added noise.
+"""
+function flat_noise(u, percent_noise)
+    # Create array of +/-1 the size of u
+    noise = rand([Float64(-1.0),Float64(1.0)],length(u))
+    # Multiply the percent noise by the u values, and then multiply by the
+    # +/- noise array. Add to the u values.
+    noisy_u = u + percent_noise * u .* noise
+    return noisy_u
+end
+
+"""
+    normal_noise(u, percent_noise)
+
+Adds normally distributed noise by calculating noise N(0.0, percent_noise) and
+computing noisy_u = u + N(0.0, percent_noise)*u.
+Takes in u, a state vector, and percent_noise, a float. Outputs noisy_u, the
+state vector with added noise.
+"""
+function normal_noise(u, percent_noise)
+    # Create an array the size of u
+    noisy_u = Vector{Float64}(undef,length(u))
+    # For each u, sample from the N(u, percent*u) distribution
+    noisy_u .= u .* (Float64(1.0) .+ rand(Normal(0.0,percent_noise), length(u)))
+    return noisy_u
+end
+
+#=
+Unaccounted functions
+=#
+
+
+"""
+    ex_unacc_sine(u, p, unacc_p)
+This is an example function to add some behavior unaccounted for in the bicycle
+model to the data. It takes in a state vector u, a vector for parameters for the
+bicycle model p, and a vector for extra parameters for the function, unacc_p.
+In this case unacc_p = [percent]
+This function will add percent*sin(u) to u.
+    unacc_u = u + u*percent*sin(u)
+"""
+function ex_unacc_sine(u,p,unacc_p)
+    # Create an array the size of u
+    unacc_u = Vector{Float64}(undef,length(u))
+    # For each u, sample from the N(u, percent*u) distribution
+    unacc_u = u + unacc_p[1] * u .* sin.(u)
+    return unacc_u
+end
+
+#=
+Data generator w/ "random" initial states/commands/cornering_stiff
+=#
+
+"""
+gen_data(N_data, p; dt = 0.001, minmax_r = pi/128.0, add_noise=false,
+    percent_noise=0.01, add_unacc=false, unacc_p=false)
+gen_data takes in a number of data points N_data, and a vector of parameters p.
+It generates initial states u with [x, y] = [0,0], commands, and varies some
+parameters, then uses them with the Dormand Prince method to calculate the next
+state u_next.
+
+The default returns an array with rows of:
+    [varied u, commands, varied p, u_next]
+If add_noise is used, returns an array with rows of:
+    [varied u, commands, varied p, u_next, noisy_u]
+If add_unacc is used, returns an array with rows of:
+    [varied u, commands, varied p, u_next, unacc_u]
+If add_noise and add_unacc are used, returns an array with rows of:
+    [varied u, commands, varied p, u_next, noisy_u, unacc_u, noisy_unacc_u]
+
+Optional args:
+    dt - A float. Changes the time step the Dormand Prince method uses.
+         Defaults to 0.001
+    minmax_r - the min/max yaw rate. If you change dt you might want to change this.
+               Default is arbitrarily ~ 3 degrees.
+    add_noise - a function add_noise(u,percent_noise) to add noise to u_next.
+                Default is false.
+    percent_noise - a float that controls how much noise is added.
+                    Default is 0.01 (1%).
+    add_unacc - a function add_unacc(u,p,unacc_p) to add unaccounted behavior to u_next.
+               Default is false.
+    unacc_p - a vector of parameters to use with add_unacc.
+              Default is empty vector [].
+"""
+function gen_data(N_data, p; dt = 0.001, minmax_r = pi/128.0, add_noise=false,
+    percent_noise=0.01, add_unacc=false, unacc_p=Vector{Float64}[])
+    # Set up Sobol sequence generator to vary the following states, commands,
+    # and parameters.
+    # [psi, vx, vy, r, steer, D, delta, cornering_stiff]
+    minmax_delta = 15.0*pi/360.0 # max change in delta is 15 degrees
+    lb = [0.0, 1.0, 0.0, -minmax_r, -0.26, -20.0, -minmax_delta, 20000.0]
+    ub = [2.0*pi, 100.0, 100.0, minmax_r, 0.26, 15.0, minmax_delta, 50000.0]
+    s = SobolSeq(lb, ub)
+    # Skip the inital portion of the LDS
+    skip(s, N_data)
+
+    # Initialize an array to store data
+    # Figure out how many parameters are changing
+    N_dp = Int(length(lb)-7)
+
+    # Collect vanilla states only
+    if (add_noise == false) & (add_unacc == false)
+        data = Array{Float64}(undef,(N_data, Int(length(lb)+7)))
+    # Collect vanilla states and either states + noise or states + extra
+    elseif ((add_noise == false) & (add_unacc != false)) |
+        ((add_noise != false) & (add_unacc == false) )
+        data = Array{Float64}(undef,(N_data, Int(length(lb)+14)))
+    # Collect vanilla states, states + noise, states + extra, and
+    # states + noise + extra
+    else
+        data = Array{Float64}(undef,(N_data, Int(length(lb)+28)))
+    end
+
+    # Generate the data
+    for i in 1:N_data
+        # Generate the new values
+        x = next!(s)
+        # Update the states, commands, and changed parameters
+        u = vcat(zeros(2), x[1:5])
+        commands = x[6:7]
+        p[6] = x[8]
+
+        # Calculate the next u with the Dormand Prince method
+        u_next = dormandprince(bicycle_model, u, p, commands, dt)
+
+        # Add noise
+        if add_noise != false
+            # Compute next x with noise
+            noisy_u = add_noise(u_next, percent_noise)
+        end
+        # Add extra
+        if add_unacc != false
+            unacc_u = add_unacc(u_next, p, unacc_p)
+        end
+        # Add noise and extra
+        if (add_noise != false) & (add_unacc != false)
+            noisy_unacc_u = add_unacc(noisy_u, p, unacc_p)
+        end
+
+        # Save data
+        if (add_noise == false) & (add_unacc == false)
+            data[i,:] = vcat(x, u_next)
+        elseif (add_noise != false) & (add_unacc == false)
+            data[i,:] = vcat(x, u_next, noisy_u)
+        elseif (add_noise == false) & (add_unacc != false)
+            data[i,:] = vcat(x, u_next, unacc_u)
+        else
+            data[i,:] = vcat(x, u_next, noisy_u, unacc_u, noisy_unacc_u)
+        end
+    end
+    return data
+end
+
+# Test gen_data
+gen_data(5, p)
+gen_data(5, p, add_noise=percent_noise_normal)
+gen_data(5, p, add_unacc=ex_unacc_sine, unacc_p = [0.04])
+gen_data(5, p, add_noise=percent_noise_normal, add_unacc=ex_unacc_sine, unacc_p = [0.04])
