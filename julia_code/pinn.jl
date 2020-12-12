@@ -8,11 +8,43 @@ Pkg.activate(".")
 # Pkg.add("Plots")
 # Pkg.add("Statistics")
 # Pkg.add("DiffEqSensitivity")
-using DiffEqFlux, Flux, Optim, OrdinaryDiffEq, Plots, Statistics, DiffEqSensitivity,StaticArrays
+using DiffEqFlux, Flux, Optim, OrdinaryDiffEq, Plots, Statistics, DiffEqSensitivity,StaticArrays, MAT
 
 include("./bicycle_model.jl")
 
 
+
+
+
+
+
+
+
+########################## Get and Pack MAT data #################################
+
+mutable struct bm_params
+  u::Float64
+  t::Float64
+  y::Float64
+  h::Float64
+  z::Float64
+  loss::Float64
+  bm_params() = new()
+end
+
+mutable struct training_set
+
+  training_set() = new()
+end
+
+mat_overpath = "../roborace_data/SpeedGoat.mat"
+function unpack_MAT(mat_overpath::String)
+
+
+end
+
+
+##################################################################################
 # 21 inputs for each input item in our x vector, u vector, p vector
 # 8 outputs for each output item in the newly predicted y vector
 
@@ -73,7 +105,7 @@ function solve_bicycle_model(x, u, p, t)
 
   # this u will be a vector of x (ie x, y, psi, etc.) and u (user input) (x)
   # x, y, psi, vx, vy, r, theta, steer = x
-  # v_theta, D, delta = u  # velocity along path, accel command, commanded steer rate 
+  # v_theta, D, delta = u  # velocity along path, accel command, commanded steer rate
   # u[1:8] = x, y, psi, vx, vy, r, theta, steer
   # u[9:11] = v_theta, D, delta
 
