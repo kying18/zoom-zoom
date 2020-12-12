@@ -150,6 +150,9 @@ command(t) = [
     steer_rate = steer rate along car axis from -0.26 to 0.26
     ]
 =#
+function com(t)
+    [5,0.1] .* 2 .*(rand(Float64, (2)).-0.5)
+end
 
 function diffeq_bicycle_model(du, u, p,t)
     bicycle_model!(du, u, p, com(t))
