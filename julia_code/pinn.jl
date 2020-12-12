@@ -8,7 +8,8 @@ Pkg.activate(".")
 # Pkg.add("Plots")
 # Pkg.add("Statistics")
 # Pkg.add("DiffEqSensitivity")
-using DiffEqFlux, Flux, Optim, OrdinaryDiffEq, Plots, Statistics, DiffEqSensitivity,StaticArrays, MAT
+using DiffEqFlux, Flux, Optim, OrdinaryDiffEq, Plots, Statistics, DiffEqSensitivity,StaticArrays
+using MAT
 
 include("./bicycle_model.jl")
 
@@ -20,7 +21,7 @@ include("./bicycle_model.jl")
 
 
 
-########################## Get and Pack MAT data #################################
+########################## Get and Pack MAT data into training obj #######################
 
 mutable struct bm_params
   u::Float64
@@ -33,18 +34,47 @@ mutable struct bm_params
 end
 
 mutable struct training_set
-
+  time_series_block::Array{Float64,2}
   training_set() = new()
 end
 
 mat_overpath = "../roborace_data/SpeedGoat.mat"
+header = matopen(mat_overpath)
+alpha_cs_front = read(header, "TireSlip_alphaFront_rad") # ``varname`` into scope
 function unpack_MAT(mat_overpath::String)
+    header = matopen(mat_overpath)
+    # all cornerist stiffness measurements i'm assuming
+    alpha_cs_front = read(header, "TireSlip_alphaFront_rad") # ``varname`` into scope
+    alpha_cs_back = read(header, "tireSlip_alphaRear_rad")
+    kap_cs_front = read(header, "tireSlip_kappaFront_unitless")
+    kap_cs_back = read(header, "tireSlip_kappaRear_unitless")
+    wtf_is_this_front = read(header, "tireSlip_kappaRear_unitless") # idk what these vals are
+    wtf_is_this_back = read(header, "tireSlip_kappaRearInd_unitless") # idk what these vals are
+    phi_h = read(header, "NAV_aHeading")
+    yaw_r = read(header, "NAV_aYaw")
 
-
+    @Todo #figure out what to do with this block structuring
+    p_block = hcat(alpha_cs_front,alpha_cs_back,kap_cs_front,kap_cs_back,phi_h,yaw_r)
 end
 
 
 ##################################################################################
+
+############################### Generate regularizer #############################
+
+
+# I think it's just this simple. I guess we gotta try
+function loss_and_regulaizer(NN_out,inp, p, command=nothing)
+    reg = bicycle_model!(du, inp, p, command)
+    return sum(abs2,NN_out - reg)
+end
+
+
+
+
+#################
+
+
 # 21 inputs for each input item in our x vector, u vector, p vector
 # 8 outputs for each output item in the newly predicted y vector
 
