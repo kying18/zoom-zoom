@@ -28,10 +28,11 @@ include("./generate_data.jl")
 # 3 hidden layers.. should be able to approximate any fxn.. maybe architecture will come later
 # we can ask chris i guess
 nn = Chain(
-    Dense(19, 50, tanh),
-    Dense(50, 50, tanh),
-    Dense(50, 50, tanh),
-    Dense(50, 7),
+    Dense(19, 64, relu),
+    Dense(64, 64, relu),
+    Dense(64, 64, relu),
+    Dense(64, 64, relu),
+    Dense(64, 7),
 )
 
 
@@ -41,11 +42,16 @@ p_ex=[350.0,3.0,1.5,1.5,500.0,21000.0,3430.0,1.2,-0.4,9.8] # only change the 5th
 u0=[0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (9)).-0.5) # commands appended to state
 
 # prob = ODEProblem(bicycle_model, )
-tspan = (0.0, 20.0)
+tspan = (0.0, 50.0)
 prob=ODEProblem(diffeq_bicycle_model,u0,tspan,p_ex) #doesn't set dt and uses adaptive time steping
 sol = solve(prob,Tsit5(),saveat=0.001)
 plot(sol, vars=(1,2))
 
+########### loss functions ########
+# the reason why i have 2 is because the x, y version is what gets 
+# called from flux.train! but in order to see the loss from the callback
+# we need a version that doesnt need the params
+###################################
 function loss()
   loss = 0
   for i in 2:length(sol.u)
@@ -55,17 +61,20 @@ function loss()
   end
   return loss
 end
-
 loss(x, y) = sum((nn(x) - y).^2)
-lr = 0.001
+
+########### setting up some stuff ########
+lr = 0.01
 opt = Flux.ADAM(lr)
 # data = Iterators.repeated((), 5000)
 iter = 0
 
+########### getting xs and ys ########
 xs = [(vcat(sol.u[i], p_ex)) for i=1:length(sol.u)-1]
 ys = [sol.u[i][1:7] for i=2:length(sol.u)]
 data = zip(xs, ys)
 
+########### training the neural net ########
 cb = function() #callback function to observe training
     global iter += 1
     if iter % 500 == 0
@@ -75,10 +84,11 @@ end
 display(loss())
 Flux.train!(loss, Flux.params(nn), data, opt; cb=cb)
 
+########### plotting the results of the nn ########
 plot(sol, vars=(1,2))
 x = rand(length(xs)-1)
 y = rand(length(xs)-1)
-for i in length(x)
+for i in 1:length(x)
     res = nn(xs[i])
     x[i] = res[1]
     y[i] = res[2]
