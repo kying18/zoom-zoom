@@ -107,41 +107,48 @@ plot!(x, y)
 
 
 ################ try generate_data.jl and single-step version for training #####################
-t_num = 4000 # number of training data pairs to use
-u_inp_len = 9
-u_out_len = 7
-p_len = 10
+function generate_training_data(t_num,u_inp_len=9,u_out_len=7,p_len=10)
+  ### t_num is the number of training data pairs to use
+  ### define all 3 training blocks
+  training_block = [zeros(u_inp_len + p_len,t_num), zeros(u_out_len,t_num), zeros(u_out_len,t_num)]
+  out_block_reg = zeros(u_out_length,training_set_num)
+  out_block_rand = zeros(u_out_length,training_set_num)
+  ###
+  for i in 1:t_num
+    # randomize u_0
+    u0_ex_gen = [0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (9)).-0.5)
 
+    #p[5] (cornering_stiff), p[9] (cla), p[5] (Iz) can change!
+    p_ex_gen=[350.0,3.0,1.5,1.5,550.0*(1.1 - 0.2*rand(Float64,1)[1]),10000.0*(1.1 - 0.2*rand(Float64,1)[1]),3430.0,1.2,-0.5*(1.2 - 0.4*rand(Float64,1)[1]),9.8]
 
-### define all 3 training blocks
-training_block = [zeros(u_inp_len + p_len,t_num), zeros(u_out_len,t_num), zeros(u_out_len,t_num)]
-out_block_reg = zeros(u_out_length,training_set_num)
-out_block_rand = zeros(u_out_length,training_set_num)
-###
-for i in 1:t_num
-  # randomize u_0
-  u0_ex_gen = [0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (9)).-0.5)
+    # get ideal training norm loss
+    out_real = bicycle_model(u0_ex_gen[1:7], p_ex_gen, u0_ex_gen[8:9])
 
-  #p[5] (cornering_stiff), p[9] (cla), p[5] (Iz) can change!
-  p_ex_gen=[350.0,3.0,1.5,1.5,550.0*(1.1 - 0.2*rand(Float64,1)[1]),10000.0*(1.1 - 0.2*rand(Float64,1)[1]),3430.0,1.2,-0.5*(1.2 - 0.4*rand(Float64,1)[1]),9.8]
+    # get ideal training norm loss
+    out_rand = out_real.*(ones(length(out_real),1).*1.02 - 0.04*rand(Float64,length(out_real)))
 
-  # get ideal training norm loss
-  out_real = bicycle_model(u0_ex_gen[1:7], p_ex_gen, u0_ex_gen[8:9])
-
-  # get ideal training norm loss
-  out_rand = out_real.*(ones(length(out_real),1).*1.02 - 0.04*rand(Float64,length(out_real)))
-
-  # push into T block
-  #
-  # training_block is: [input (u_0 + p array), ideal output for reg, slightly rand. output]
-  training_block[1][:,i] = vcat(u0_ex_gen,p_ex_gen)
-  training_block[2][:,i] = out_real
-  training_block[3][:,i] = out_rand
-
-
+    # push into T block
+    #
+    # training_block is: [input (u_0 + p array), ideal output for reg, slightly rand. output]
+    training_block[1][:,i] = vcat(u0_ex_gen,p_ex_gen)
+    training_block[2][:,i] = out_real
+    training_block[3][:,i] = out_rand
+  end
+  return training_block
 end
 
 
+
+
+
+dp_num = 4000
+t_block = generate_training_data(dp_num)
+
+# best way to squish training block into something readable by Flux
+inp_train = [t_block[1][:,i] for i in 1:size(t_block[1],2)]
+outp_train = [t_block[3][:,i] for i in 1:size(t_block[3],2)]
+
+train_dat = zip(inp_train,outp_train)
 
 ###### loss function regularized with bicycle model
 
