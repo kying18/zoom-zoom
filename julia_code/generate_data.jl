@@ -180,7 +180,7 @@ function gen_data(N_data, p; dt = 0.001, minmax_r = pi/128.0, add_noise=false,
     # [psi, vx, vy, r, steer, D, delta, cornering_stiff]
     minmax_delta = 30.0*pi/360.0 # max change in delta is 15 degrees
     lb = [0.0, 1.0, 0.0, -minmax_r, -0.26, -20.0, -minmax_delta, 20000.0]
-    ub = [2.0*pi, 100.0, 100.0, minmax_r, 0.26, 15.0, minmax_delta, 50000.0]
+    ub = [2.0*pi, 30.0, 30.0, minmax_r, 0.26, 15.0, minmax_delta, 50000.0]
     s = SobolSeq(lb, ub)
     # Skip the inital portion of the LDS
     skip(s, N_data)
@@ -248,7 +248,9 @@ Examples for gen_data
 #=
 p_ex=[350.0,3.0,1.5,1.5,550.0,10000.0,3430.0,1.2,-0.5,9.8]
 gen_data(5, p_ex)
+# output row: [psi0, vx0, vy0, r0, steer0, D, delta, cornering_stiff, x, y, psi, vx, vy, r, steer]
 gen_data(5, p_ex, add_noise=normal_noise)
+# output row: [psi0, vx0, vy0, r0, steer0, D, delta, cornering_stiff, x, y, psi, vx, vy, r, steer, x_noise, y_noise, psi_noise, vx_noise, vy_noise, r_noise, steer_noise]
 gen_data(5, p_ex, add_unacc=ex_unacc_sine, unacc_p = [0.04])
 gen_data(5, p_ex, add_noise=normal_noise, add_unacc=ex_unacc_sine, unacc_p = [0.04])
 =#

@@ -253,9 +253,9 @@ version = "6.48.2"
 
 [[DiffEqCallbacks]]
 deps = ["DataStructures", "DiffEqBase", "ForwardDiff", "LinearAlgebra", "NLsolve", "OrdinaryDiffEq", "RecipesBase", "RecursiveArrayTools", "StaticArrays"]
-git-tree-sha1 = "c252e7a153d902f7c535feb3d296fdd9812049c3"
+git-tree-sha1 = "965bedf200f7ae02818728f66d48e9ec2018cee8"
 uuid = "459566f4-90b8-5000-8ac3-15dfb0a30def"
-version = "2.14.1"
+version = "2.15.0"
 
 [[DiffEqFinancial]]
 deps = ["DiffEqBase", "DiffEqNoiseProcess", "LinearAlgebra", "Markdown", "RandomNumbers"]
