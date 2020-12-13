@@ -64,7 +64,7 @@ end
 
 
 # I think it's just this simple. I guess we gotta try
-function loss_and_regulaizer(NN_out,inp, p, command=nothing)
+function loss_and_regularizer(NN_out,inp, p, command=nothing)
     reg = bicycle_model!(du, inp, p, command)
     return sum(abs2,NN_out - reg)
 end

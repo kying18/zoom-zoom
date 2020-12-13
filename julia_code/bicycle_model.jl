@@ -4,6 +4,8 @@ Pkg.activate(".")
 
 function tire_force(alpha, Fz, p)
     -alpha .* p[6] .* Fz/p[7]
+    # p[6] is cornering stiffness
+    # p[7] is fz
 end
 
 function normal_force(u, command, p)
@@ -24,6 +26,10 @@ function bicycle_model!(du, u, p, command)
 
     # params of the car
     m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g = p
+    # lf/lr are distances between center of mass and front/rear axel
+    # Iz is yaw moment of inertia
+    #
+
 
     # estimate normal
     FzF, FzR = normal_force(u, command, p) # TODO
@@ -34,6 +40,7 @@ function bicycle_model!(du, u, p, command)
     u[8]=D
     u[9]=delta
     # compute slip angles
+    # alpha_f = front slip angle ---- alpha_r = rear slip angle
     alpha_f = atan((vy + r * lf) / vx) + steer
     alpha_r = atan((vy - r * lr) / vx)
 
@@ -150,8 +157,11 @@ command(t) = [
     steer_rate = steer rate along car axis from -0.26 to 0.26
     ]
 =#
+
+# added sin curve for steering rate
+#[accel, steer_rate]
 function com(t)
-    [5,0.1] .* 2 .*(rand(Float64, (2)).-0.5)
+    [5,0.1*sin(t)] .* 2 .*(rand(Float64, (2)).-0.5)
 end
 
 function diffeq_bicycle_model(du, u, p,t)
