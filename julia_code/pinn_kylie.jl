@@ -102,10 +102,7 @@ plot!(x, y)
 
 
 
-
-
-
-
+## MARK's SECTION
 ################ try generate_data.jl and single-step version for training #####################
 function generate_training_data(t_num,u_inp_len=9,u_out_len=7,p_len=10)
   ### t_num is the number of training data pairs to use
@@ -116,10 +113,10 @@ function generate_training_data(t_num,u_inp_len=9,u_out_len=7,p_len=10)
   ###
   for i in 1:t_num
     # randomize u_0
-    u0_ex_gen = [0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (9)).-0.5)
+    local u0_ex_gen = [0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (9)).-0.5)
 
     #p[5] (cornering_stiff), p[9] (cla), p[5] (Iz) can change!
-    p_ex_gen=[350.0,3.0,1.5,1.5,550.0*(1.1 - 0.2*rand(Float64,1)[1]),10000.0*(1.1 - 0.2*rand(Float64,1)[1]),3430.0,1.2,-0.5*(1.2 - 0.4*rand(Float64,1)[1]),9.8]
+    local p_ex_gen=[350.0,3.0,1.5,1.5,550.0*(1.1 - 0.2*rand(Float64,1)[1]),10000.0*(1.1 - 0.2*rand(Float64,1)[1]),3430.0,1.2,-0.5*(1.2 - 0.4*rand(Float64,1)[1]),9.8]
 
     # get ideal training norm loss
     out_real = bicycle_model(u0_ex_gen[1:7], p_ex_gen, u0_ex_gen[8:9])
@@ -151,23 +148,44 @@ outp_train = [t_block[3][:,i] for i in 1:size(t_block[3],2)]
 train_dat = zip(inp_train,outp_train)
 
 ###### loss function regularized with bicycle model
+### syntax info found here: https://fluxml.ai/Flux.jl/stable/training/training/
+
+lam = 0.5
+#loss_with_BM_reg(x, y) = Flux.Losses.mse(nn(x), y) + lam*Flux.Losses.mse(nn(x), bicycle_model(x[1:7], x[10:end], x[8:9]))
+#loss_with_BM_reg(x, y) = sum(abs2,nn(x) - y)
+loss_with_BM_reg(x) = sum(abs2,nn(x) - bicycle_model(x[1:7], x[10:end], x[8:9]))
+
+lr = 0.01
+opt = Flux.ADAM(lr)
+# data = Iterators.repeated((), 5000)
+iter = 0
+
+nn = Chain(
+    Dense(19, 64, relu),
+    Dense(64, 64, relu),
+    Dense(64, 64, relu),
+    Dense(64, 64, relu),
+    Dense(64, 7),
+)
 
 
-function loss_reg_bm()
-  loss = 0
-  for i in 2:length(sol.u)
-    nn_pred = nn(vcat(sol.u[i-1], p_ex))
-    actual = sol.u[i][1:7]
-    loss += sum((nn_pred - actual).^2)
+test_x = xs[rand(1:length(xs))]
+test_y = nn(test_x)# ... create single batch of test data ...
+evalcb() = @show(loss_with_BM_reg(test_x, test_y))
+cb = function () #callback function to observe training
+  global iter += 1
+  if iter % 500 == 0
+    test_x = xs[rand(1:length(xs))]
+    test_y = nn(test_x)# ... create single batch of test data ...
+    display(loss_with_BM_reg(test_x, test_y))
   end
-  return loss
 end
-loss(x, y) = sum((nn(x) - y).^2)
+display(loss_with_BM_reg(test_x))
 
+Flux.train!(loss_with_BM_reg, Flux.params(nn), train_dat, opt;
+            cb=cb)
 
-
-
-
+################################################################################
 
 
 
@@ -187,37 +205,8 @@ loss(x, y) = sum((nn(x) - y).^2)
 #dormandprince(f, u, p, command, dt)
 
 
-
-
-
-
-
-
-########### training the neural net ########
-cb = function() #callback function to observe training
-    global iter += 1
-    if iter % 500 == 0
-        display(loss())
-    end
-end
-display(loss())
-Flux.train!(loss, Flux.params(nn), data, opt; cb=cb)
-
-########### plotting the results of the nn ########
-plot(sol, vars=(1,2))
-x = rand(length(xs)-1)
-y = rand(length(xs)-1)
-for i in 1:length(x)
-    res = nn(xs[i])
-    x[i] = res[1]
-    y[i] = res[2]
-end
-plot!(x, y)
-
-
 ####################################################################################################################
-
-
+## END OF MARK's SECTION
 
 
 
