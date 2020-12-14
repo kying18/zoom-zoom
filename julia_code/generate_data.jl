@@ -313,4 +313,4 @@ callback_prob=ODEProblem(bicycle_model_callback!, u0_ex, callback_tspan, p_ex)
 callback_sol = solve(callback_prob,callback=cb, saveat=0.05)
 
 plot(callback_sol, vars=(1,2), xlabel="x", ylabel="y", title="Vehicle Trajectory") # (x, y)
-#=
+=#

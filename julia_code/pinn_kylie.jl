@@ -104,7 +104,8 @@ plot!(x, y)
 
 ## MARK's SECTION
 ################ try generate_data.jl and single-step version for training #####################
-function generate_training_data(t_num,u_inp_len=9,u_out_len=7,p_len=10)
+using LinearAlgebra
+function generate_training_data(t_num,u_inp_len=9,u_out_len=7,p_len=10,dt=0.01)
   ### t_num is the number of training data pairs to use
   ### define all 3 training blocks
   training_block = [zeros(u_inp_len + p_len,t_num), zeros(u_out_len,t_num), zeros(u_out_len,t_num)]
@@ -113,17 +114,22 @@ function generate_training_data(t_num,u_inp_len=9,u_out_len=7,p_len=10)
   ###
   for i in 1:t_num
     # randomize u_0
-    local u0_ex_gen = [0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (9)).-0.5)
+    foo = vcat([0.0,0.0,0.0,5.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (7)).-0.5),[0.0,0.0])
+    local u0_ex_gen = foo/norm(foo)
 
     #p[5] (cornering_stiff), p[9] (cla), p[5] (Iz) can change!
-    local p_ex_gen=[350.0,3.0,1.5,1.5,550.0*(1.1 - 0.2*rand(Float64,1)[1]),10000.0*(1.1 - 0.2*rand(Float64,1)[1]),3430.0,1.2,-0.5*(1.2 - 0.4*rand(Float64,1)[1]),9.8]
+    foo2 = [350.0,3.0,1.5,1.5,550.0*(1.1 - 0.2*rand(Float64,1)[1]),10000.0*(1.02 - 0.04*rand(Float64,1)[1]),3430.0,1.2,-0.5*(1.02 - 0.04*rand(Float64,1)[1]),9.8]
+    local p_ex_gen = foo2/norm(foo2)
+    # get ideal training norm loss
+    #foo2 = bicycle_model(u0_ex_gen[1:7], p_ex_gen, u0_ex_gen[8:9])
+
+    # push into a DP solver to get the next u output for some fixed timestep
+    out_real = dormandprince(bicycle_model, foo[1:7], foo2, foo[8:9], dt)
+    #out_real = foo2/norm(foo2) # normalize the real outputs
 
     # get ideal training norm loss
-    out_real = bicycle_model(u0_ex_gen[1:7], p_ex_gen, u0_ex_gen[8:9])
-
-    # get ideal training norm loss
-    out_rand = out_real.*(ones(length(out_real),1).*1.02 - 0.04*rand(Float64,length(out_real)))
-
+    foo3 = out_real.*(ones(length(out_real),1).*1.02 - 0.04*rand(Float64,length(out_real)))
+    out_rand = foo3/norm(foo3) # normalize the rand outputs
     # push into T block
     #
     # training_block is: [input (u_0 + p array), ideal output for reg, slightly rand. output]
@@ -137,56 +143,93 @@ end
 
 
 
-
-dp_num = 4000
+dp_num = 100000
 t_block = generate_training_data(dp_num)
 
 # best way to squish training block into something readable by Flux
 inp_train = [t_block[1][:,i] for i in 1:size(t_block[1],2)]
-outp_train = [t_block[3][:,i] for i in 1:size(t_block[3],2)]
+outp_train = [t_block[2][:,i] for i in 1:size(t_block[2],2)]
 
 train_dat = zip(inp_train,outp_train)
+
+
+
+
+#############################################################################################
+########################### Try Emily's Data Generation #####################################
+
+# @TODO
+#####################################################################################################
+
 
 ###### loss function regularized with bicycle model
 ### syntax info found here: https://fluxml.ai/Flux.jl/stable/training/training/
 
-lam = 0.5
-#loss_with_BM_reg(x, y) = Flux.Losses.mse(nn(x), y) + lam*Flux.Losses.mse(nn(x), bicycle_model(x[1:7], x[10:end], x[8:9]))
-#loss_with_BM_reg(x, y) = sum(abs2,nn(x) - y)
-loss_with_BM_reg(x) = sum(abs2,nn(x) - bicycle_model(x[1:7], x[10:end], x[8:9]))
 
-lr = 0.01
-opt = Flux.ADAM(lr)
-# data = Iterators.repeated((), 5000)
-iter = 0
 
 nn = Chain(
     Dense(19, 64, relu),
-    Dense(64, 64, relu),
-    Dense(64, 64, relu),
     Dense(64, 64, relu),
     Dense(64, 7),
 )
 
 
-test_x = xs[rand(1:length(xs))]
-test_y = nn(test_x)# ... create single batch of test data ...
-evalcb() = @show(loss_with_BM_reg(test_x, test_y))
-cb = function () #callback function to observe training
+
+##################################
+
+lam = 0.5
+#loss_with_BM_reg(x, y) = Flux.Losses.mse(nn(x), y) + lam*Flux.Losses.mse(nn(x), bicycle_model(x[1:7], x[10:end], x[8:9]))
+#loss_with_BM_reg(x, y) = sum(abs2,nn(x) - y)
+loss_with_BM_only(x,y) = Flux.Losses.mse(nn(x), y)
+
+lr = 0.000001
+opt = Flux.ADAM(lr)
+# data = Iterators.repeated((), 5000)
+
+
+
+
+# IMPORTANT: set a large enough batch size for the test data
+# Basically I do it by randomizing a batch pick from the training
+# set and just add up the total loss from that batch
+batch_size = 50
+iter = 0
+cb = function ()
   global iter += 1
   if iter % 500 == 0
-    test_x = xs[rand(1:length(xs))]
-    test_y = nn(test_x)# ... create single batch of test data ...
-    display(loss_with_BM_reg(test_x, test_y))
+    loss_counter = 0
+    for iter in 1:batch_size
+      foo = rand(1:length(outp_train))
+      test_x = inp_train[foo]
+      test_y = outp_train[foo]
+      loss_counter += loss_with_BM_only(test_x,test_y)
+    end
+    display(loss_counter)
   end
 end
-display(loss_with_BM_reg(test_x))
 
-Flux.train!(loss_with_BM_reg, Flux.params(nn), train_dat, opt;
+using Flux: @epochs
+@epochs 10 Flux.train!(loss_with_BM_only, Flux.params(nn), train_dat, opt;
             cb=cb)
 
 ################################################################################
+##################### let's try it out #########################################
 
+
+
+u0_test = vcat([0.0,0.0,0.0,5.0,0.0,0.0,0.0].+ 2 .*(rand(Float64, (7)).-0.5),[0.0,0.0])
+p_test=[350.0,3.0,1.5,1.5,550.0*(1.1 - 0.2*rand(Float64,1)[1]),10000.0*(1.02 - 0.04*rand(Float64,1)[1]),3430.0,1.2,-0.5*(1.02 - 0.04*rand(Float64,1)[1]),9.8]
+foo = bicycle_model(u0_test[1:7], p_test, u0_test[8:9])
+foo2 = dormandprince(bicycle_model, u0_test[1:7], p_test, u0_test[8:9], 0.01)
+out_test = foo2/norm(foo2)
+nn_output = nn(vcat(p_test,u0_test))
+
+loss_with_BM_only(vcat(p_test,u0_test),out_test)
+
+
+
+
+################################################################################
 
 
 
