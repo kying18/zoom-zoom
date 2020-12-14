@@ -4,6 +4,7 @@ using Random
 using Distributions
 using DifferentialEquations
 using Sobol
+using DiffEqCallbacks
 
 #=
 #Check that this works vv
@@ -143,12 +144,14 @@ Data generator w/ "random" initial states/commands/cornering_stiff
 =#
 
 """
-gen_data(N_data, p; dt = 0.001, minmax_r = pi/128.0, add_noise=false,
+gen_data(N_data, lb, ub; dt = 0.001, add_noise=false,
     percent_noise=0.01, add_unacc=false, unacc_p=false)
-gen_data takes in a number of data points N_data, and a vector of parameters p.
-It generates initial states u with [x, y] = [0,0], commands, and varies some
-parameters, then uses them with the Dormand Prince method to calculate the next
-state u_next.
+gen_data takes in
+    N_data = a number of data points
+    lb = a vector of lower bounds for the varied values, and
+    ub = a vector of upper bounds for the varied values.
+It generates initial states u with [x, y] = [0,0], commands, and parameters,
+then uses them with the Dormand Prince method to calculate the next state u_next.
 
 The default returns an array with rows of:
     [varied u, commands, varied p, u_next]
@@ -162,8 +165,6 @@ If add_noise and add_unacc are used, returns an array with rows of:
 Optional args:
     dt - A float. Changes the time step the Dormand Prince method uses.
          Defaults to 0.001
-    minmax_r - the min/max yaw rate. If you change dt you might want to change this.
-               Default is arbitrarily ~ 3 degrees.
     add_noise - a function add_noise(u,percent_noise) to add noise to u_next.
                 Default is false.
     percent_noise - a float that controls how much noise is added.
@@ -173,17 +174,18 @@ Optional args:
     unacc_p - a vector of parameters to use with add_unacc.
               Default is empty vector [].
 """
-function gen_data(N_data, p; dt = 0.001, minmax_r = pi/128.0, add_noise=false,
+function gen_data(N_data, lb, ub; dt = 0.001, add_noise=false,
     percent_noise=0.01, add_unacc=false, unacc_p=Vector{Float64}[])
     # Set up Sobol sequence generator to vary the following states, commands,
     # and parameters.
-    # [psi, vx, vy, r, steer, D, delta, cornering_stiff]
-    minmax_delta = 30.0*pi/360.0 # max change in delta is 15 degrees
-    lb = [0.0, 1.0, 0.0, -minmax_r, -0.26, -20.0, -minmax_delta, 20000.0]
-    ub = [2.0*pi, 30.0, 30.0, minmax_r, 0.26, 15.0, minmax_delta, 50000.0]
+
     s = SobolSeq(lb, ub)
     # Skip the inital portion of the LDS
     skip(s, N_data)
+
+    # Set the fixed parameter values
+    rho = 1.2    # air density
+    g = 9.8      # gravity
 
     # Initialize an array to store data
     # Figure out how many parameters are changing
@@ -204,12 +206,21 @@ function gen_data(N_data, p; dt = 0.001, minmax_r = pi/128.0, add_noise=false,
 
     # Generate the data
     for i in 1:N_data
-        # Generate the new values
+        # Generate the new state, command, and parameter values
         x = next!(s)
         # Update the states, commands, and changed parameters
         u = vcat(zeros(2), x[1:5])
         commands = x[6:7]
-        p[6] = x[8]
+        m = x[8]     # mass
+        l = x[9]     # length
+        lflr = x[10] # lf/lr
+        Iz = x[11]   # Iz
+        cornering_stiff = x[12]    # cornering stiffness
+        sample_fz = x[8]*g # sample_fz = mass * gravity
+        cla = x[13]  # cla
+
+        # Assemble parameter vector
+        p = [m, l, lflr, lflr, Iz, cornering_stiff, sample_fz, rho, cla, g]
 
         # Calculate the next u with the Dormand Prince method
         u_next = dormandprince(bicycle_model, u, p, commands, dt)
@@ -245,12 +256,61 @@ end
 #=
 Examples for gen_data
 =#
-#=
-p_ex=[350.0,3.0,1.5,1.5,550.0,10000.0,3430.0,1.2,-0.5,9.8]
-gen_data(5, p_ex)
+# Set minimum and maximum values for initial state, parameters, and commands
+min_psi = 0.0   # Don't change
+max_psi = 2.0*pi # Don't change
+min_v = 0.0
+max_v = 30.0            # 30.0 m/s = 108 km/hr
+minmax_r = pi/128.0     # Min yaw rate (derivative of psi), pi/128 is about 3 deg
+minmax_steer = 0.26     # Don't change, from Driverless
+min_D = -20.0           # Driverless = [-20,15]
+max_D = 15.0
+minmax_delta = 30.0*pi/360.0 # Don't change. Max change in delta is 15 degrees,
+min_m = 200.0   # Driverless = 350.0
+max_m = 1000.0
+min_l = 2.5     # Driverless = 3.0
+max_l = 3.5
+min_lflr = 1.0  # Driverless = 1.5
+max_lflr = 2.0
+min_Iz = 550.0  # Driverless = 550.0
+max_Iz = 600.0
+min_cornering_stiff = 20000.0   # Driverless = [20,000,50,000]
+max_cornering_stiff = 50000.0
+min_cla = -0.7	# Driverless = 0.5
+max_cla = -0.3
+
+# [psi, vx, vy, r, steer, D, delta, m, l, lf/lr, Iz, cornering_stiff, cla]
+lb = [min_psi, min_v, min_v, -minmax_r, -minmax_steer, min_D, -minmax_delta, min_m, min_l, min_lflr, min_Iz, min_cornering_stiff, min_cla]
+ub = [max_psi, max_v, max_v, minmax_r, minmax_steer, max_D, minmax_delta, max_m, max_l, max_lflr, max_Iz, max_cornering_stiff, max_cla]
+
+gen_data(5, lb, ub)
 # output row: [psi0, vx0, vy0, r0, steer0, D, delta, cornering_stiff, x, y, psi, vx, vy, r, steer]
-gen_data(5, p_ex, add_noise=normal_noise)
+gen_data(5, lb, ub, add_noise=normal_noise)
 # output row: [psi0, vx0, vy0, r0, steer0, D, delta, cornering_stiff, x, y, psi, vx, vy, r, steer, x_noise, y_noise, psi_noise, vx_noise, vy_noise, r_noise, steer_noise]
-gen_data(5, p_ex, add_unacc=ex_unacc_sine, unacc_p = [0.04])
-gen_data(5, p_ex, add_noise=normal_noise, add_unacc=ex_unacc_sine, unacc_p = [0.04])
+gen_data(5, lb, ub, add_unacc=ex_unacc_sine, unacc_p = [0.04])
+gen_data(5, lb, ub, add_noise=normal_noise, add_unacc=ex_unacc_sine, unacc_p = [0.04])
+
+#=
+Plotting example with commands at fixed time step
 =#
+
+#=
+# Set initial values for example
+u0_ex=[0.0,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0]
+
+# Set up Sobol sequence for generating commands
+minmax_delta = 30.0*pi/360.0 # max change in delta is 15 degrees
+command_lb = [min_D, -minmax_delta] # Change value above to change bounds
+command_ub = [max_D, minmax_delta]
+global command_s = SobolSeq(command_lb, command_ub)
+
+callback_tmax = 50.0
+callback_tspan = (0.0,callback_tmax)
+dosetimes = 0.0:0.5:callback_tmax
+affect!(integrator) = integrator.u[8:9] .= next!(command_s)
+cb = PresetTimeCallback(dosetimes,affect!)
+callback_prob=ODEProblem(bicycle_model_callback!, u0_ex, callback_tspan, p_ex)
+callback_sol = solve(callback_prob,callback=cb, saveat=0.05)
+
+plot(callback_sol, vars=(1,2), xlabel="x", ylabel="y", title="Vehicle Trajectory") # (x, y)
+#=

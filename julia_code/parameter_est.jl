@@ -23,99 +23,99 @@ normal_noisy_data = gen_data(u0,example_g,p,gen_params=change_params_percent_nor
 normal_noisy_data = gen_data(u0,example_g,p,add_noise=percent_noise_normal,gen_params=change_params_percent_normal)
 =#
 
-"""
-    change_params_percent_normal(params, i, percent_dp)
+# """
+#     change_params_percent_normal(params, i, percent_dp)
+#
+#     Takes params, an array of parameters, an index i, and a floating point
+#     percentage, percent_dp. For each of the parameters p, it computes a normally
+#     distributed change dp = N(0.0,percent_dp*p), and decides the sign of the
+#     change based on the sign of the previous dp. There is a 10% chance that the
+#     sign of dp differs from the previous dp.
+# """
+# function change_params_percent_normal(params, i, percent_dp)
+#     # Create a vector to store the new parameters in
+#     new_params = Vector{Float64}(undef,10)
+#     # Calculate the previous change in parameters to figure out its sign later
+#     if i > 2
+#         prev_dp = params[i-1,:] - params[i-2,:]
+#     else
+#         # Set prev_dp to an array of -1.0s for the first parameter change
+#         prev_dp = -1.0 * ones(Float64,length(params[i-1,:]))
+#     end
+#     # Iterate through the parametrs and calculate the next parameter
+#     for j in 1:length(params[i-1,:])
+#         # Pick a new parameter
+#         dp = abs(rand(Normal(0.0, percent_dp[j]*params[i-1,j])))
+#         # Generate a random number [0,1) to decide the sign of dp
+#         change_sign = rand(Float64)
+#         # Figure out the sign of the previous dp
+#         if prev_dp[j] < 0.0
+#             sign = -1.0
+#         else
+#             sign = 1.0
+#         end
+#         # 10% chance of changing the sign of dp from that of the previous dp
+#         if change_sign <= 0.1
+#             sign = sign*-1.0
+#         end
+#         # Add dp to the previous parameters
+#         new_params[j] = params[i-1,j] + sign * dp
+#     end
+#     return new_params
+# end
 
-    Takes params, an array of parameters, an index i, and a floating point
-    percentage, percent_dp. For each of the parameters p, it computes a normally
-    distributed change dp = N(0.0,percent_dp*p), and decides the sign of the
-    change based on the sign of the previous dp. There is a 10% chance that the
-    sign of dp differs from the previous dp.
-"""
-function change_params_percent_normal(params, i, percent_dp)
-    # Create a vector to store the new parameters in
-    new_params = Vector{Float64}(undef,10)
-    # Calculate the previous change in parameters to figure out its sign later
-    if i > 2
-        prev_dp = params[i-1,:] - params[i-2,:]
-    else
-        # Set prev_dp to an array of -1.0s for the first parameter change
-        prev_dp = -1.0 * ones(Float64,length(params[i-1,:]))
-    end
-    # Iterate through the parametrs and calculate the next parameter
-    for j in 1:length(params[i-1,:])
-        # Pick a new parameter
-        dp = abs(rand(Normal(0.0, percent_dp[j]*params[i-1,j])))
-        # Generate a random number [0,1) to decide the sign of dp
-        change_sign = rand(Float64)
-        # Figure out the sign of the previous dp
-        if prev_dp[j] < 0.0
-            sign = -1.0
-        else
-            sign = 1.0
-        end
-        # 10% chance of changing the sign of dp from that of the previous dp
-        if change_sign <= 0.1
-            sign = sign*-1.0
-        end
-        # Add dp to the previous parameters
-        new_params[j] = params[i-1,j] + sign * dp
-    end
-    return new_params
-end
-
-function gen_data(u0, g, p, collect_at=0:1:10; gen_params=false,
-    percent_dp=1e-4*ones(Float64,10), add_noise=false, percent_noise=0.01)
-    # Figure out number of data points to collect
-    len=length(collect_at)
-    # Array to store the state data in
-    xs=Array{Float64,2}(undef,len,8)
-    # Save the initial state
-    xs[1,:]=u0
-    # Arrays to store dxs and inputs in
-    dxs=Array{Float64,2}(undef, len,8)
-    inputs=Array{Float64,2}(undef, len,3)
-
-    # Create storage array if parameters are being modified
-    if gen_params != false
-        # Create an array to store parameters in
-        params=Array{Float64,2}(undef,len, length(p))
-        # Save the initial parameters
-        params[1,:] = p
-    end
-
-    # Generate the data
-    for itr in 2:len
-        # Generate inputs
-        inputs[itr-1,:]=g(collect_at[itr-1])
-
-        # If parameters are to be changed,
-        if gen_params != false
-            # Update p
-            p = gen_params(params, itr, percent_dp)
-            # Save to params array
-            params[itr,:] = p
-        end
-
-        # Calculate dx
-        dxs[itr,:]=bicycle_model(xs[itr-1,:], inputs[itr-1,:], p)
-        # Compute next x
-        # xs[itr,:].=xs[itr-1].+dxs[itr]
-        xs[itr,:]=xs[itr-1,:].+dxs[itr,:]
-
-        # If noise is to be added
-        if add_noise != false
-            # Compute next x with noise
-            xs[itr,:] = add_noise(xs[itr,:], percent_noise)
-        end
-    end
-
-    if gen_params == false
-        return [collect_at, xs, dxs, inputs]
-    else
-        return [collect_at, xs, dxs, inputs, params]
-    end
-end
+# function gen_data(u0, g, p, collect_at=0:1:10; gen_params=false,
+#     percent_dp=1e-4*ones(Float64,10), add_noise=false, percent_noise=0.01)
+#     # Figure out number of data points to collect
+#     len=length(collect_at)
+#     # Array to store the state data in
+#     xs=Array{Float64,2}(undef,len,8)
+#     # Save the initial state
+#     xs[1,:]=u0
+#     # Arrays to store dxs and inputs in
+#     dxs=Array{Float64,2}(undef, len,8)
+#     inputs=Array{Float64,2}(undef, len,3)
+#
+#     # Create storage array if parameters are being modified
+#     if gen_params != false
+#         # Create an array to store parameters in
+#         params=Array{Float64,2}(undef,len, length(p))
+#         # Save the initial parameters
+#         params[1,:] = p
+#     end
+#
+#     # Generate the data
+#     for itr in 2:len
+#         # Generate inputs
+#         inputs[itr-1,:]=g(collect_at[itr-1])
+#
+#         # If parameters are to be changed,
+#         if gen_params != false
+#             # Update p
+#             p = gen_params(params, itr, percent_dp)
+#             # Save to params array
+#             params[itr,:] = p
+#         end
+#
+#         # Calculate dx
+#         dxs[itr,:]=bicycle_model(xs[itr-1,:], inputs[itr-1,:], p)
+#         # Compute next x
+#         # xs[itr,:].=xs[itr-1].+dxs[itr]
+#         xs[itr,:]=xs[itr-1,:].+dxs[itr,:]
+#
+#         # If noise is to be added
+#         if add_noise != false
+#             # Compute next x with noise
+#             xs[itr,:] = add_noise(xs[itr,:], percent_noise)
+#         end
+#     end
+#
+#     if gen_params == false
+#         return [collect_at, xs, dxs, inputs]
+#     else
+#         return [collect_at, xs, dxs, inputs, params]
+#     end
+# end
 
 #=
 For parameter estimation, we want to look at the evolution of u over time, with
@@ -339,17 +339,6 @@ function update_p(p_update, t)
     return new_p
 end
 
-function com(t)
-    [5,0.1] .* 2 .*(rand(Float64, (2)).-0.5)
-end
-
-function update_commands(t)
-    if isapprox(t % 2.0, 0.0,
-end
-
-
-isapprox(102.001 % 2.0, 0, atol=1e-1)
-
 function diffeq_bicycle_model_p!(dupc, upc, p_diffeq, t)
     # Unpack the static parameters and the
     p_stat, p_update = p_diffeq
@@ -420,18 +409,18 @@ test_dupc
 test_upc
 
 
-spike_tmax = 150.0
+spike_tmax = 450.0
 spike_tspan = (0.0,spike_tmax)
 dosetimes = 0.0:0.5:spike_tmax
 affect!(integrator) = integrator.u[11:12] .= next!(command_s)
 cb = PresetTimeCallback(dosetimes,affect!)
-spike_prob=ODEProblem(diffeq_bicycle_model_p_spikes!, upc0, tspan, p_diffeq)
-spike_sol = solve(spike_prob,callback=cb, max_iter=1e7, saveat=0.05)
+spike_prob=ODEProblem(diffeq_bicycle_model_p_spikes!, upc0, spike_tspan, p_diffeq)
+spike_sol = solve(spike_prob,callback=cb, saveat=0.05)
 
 #plot path of car
-plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y") # (x, y)
-plot(spike_sol, vars=8, xlabel="t", ylabel="Iz", legend=false) # Iz
-plot(spike_sol, vars=9, xlabel="t", ylabel="Cornering Stiffness", legend=false) # Cornering stiffness
-plot(spike_sol, vars=10, xlabel="t", ylabel="Cla", legend=false)
-plot(spike_sol, vars=11, xlabel="t", ylabel="D", legend=false)
-plot(spike_sol, vars=12, xlabel="t", ylabel="delta", legend=false)
+plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", title="Vehicle Trajectory") # (x, y)
+plot(spike_sol, vars=8, xlabel="t", ylabel="Iz", title="Evolution of Iz", legend=false) # Iz
+plot(spike_sol, vars=9, xlabel="t", ylabel="Cornering Stiffness", title="Evolution of Cornering Stiffness", legend=false) # Cornering stiffness
+plot(spike_sol, vars=10, xlabel="t", ylabel="Cla", title="Evolution of Cla", legend=false)
+plot(spike_sol, vars=11, xlabel="t", ylabel="D", title="Parameter Estimation Input Acceleration", legend=false)
+plot(spike_sol, vars=12, xlabel="t", ylabel="delta", title="Parameter Estimation Input Steering", legend=false)
