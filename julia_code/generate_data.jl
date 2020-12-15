@@ -285,9 +285,9 @@ ub = [max_psi, max_v, max_v, minmax_r, minmax_steer, max_D, minmax_delta, max_m,
 
 #=
 gen_data(5, lb, ub)
-# output row: [psi0, vx0, vy0, r0, steer0, D, delta, cornering_stiff, x, y, psi, vx, vy, r, steer]
+# output row: [psi0, vx0, vy0, r0, steer0, D, delta, m, l, lf/lr, Iz, cornering_stiff, cla, x, y, psi, vx, vy, r, steer]
 gen_data(5, lb, ub, add_noise=normal_noise)
-# output row: [psi0, vx0, vy0, r0, steer0, D, delta, cornering_stiff, x, y, psi, vx, vy, r, steer, x_noise, y_noise, psi_noise, vx_noise, vy_noise, r_noise, steer_noise]
+# output row: [psi0, vx0, vy0, r0, steer0, D, delta, m, l, lf/lr, Iz, cornering_stiff, cla, x, y, psi, vx, vy, r, steer, x_noise, y_noise, psi_noise, vx_noise, vy_noise, r_noise, steer_noise]
 gen_data(5, lb, ub, add_unacc=ex_unacc_sine, unacc_p = [0.04])
 gen_data(5, lb, ub, add_noise=normal_noise, add_unacc=ex_unacc_sine, unacc_p = [0.04])
 =#

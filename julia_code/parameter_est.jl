@@ -244,73 +244,198 @@ plot(spike_sol, vars=12, xlabel="t", ylabel="delta", title="Parameter Estimation
 #=
 Parameter estimation df/dp calculations
 =#
-function calc_dF_yfr_dcla(vx, cornering_stiff, alphafr, l, lfr, sample_Fz, rho)
-    dF_yfr_dcla = 0.5 * alphafr * cornering_stiff * lf * rho * vx^2.0 / (sample_Fz * l)
-    return dF_yfr_dcla
+function calc_dFyfr_dcla(vx, cornering_stiff, alphafr, l, lfr, sample_Fz, rho)
+    dFyfr_dcla = 0.5 * alphafr * cornering_stiff * lf * rho * vx^2.0 / (sample_Fz * l)
+    return dFyfr_dcla
 end
 
-function calc_dF_yfr_dcs(alphafr, Fzfr, sample_Fz)
-    dF_yfr_dcs = -alphafr * Fzfr / sample_Fz
-    return dF_yfr_dcs
+function calc_dFyfr_dcs(alphafr, Fzfr, sample_Fz)
+    dFyfr_dcs = -alphafr * Fzfr / sample_Fz
+    return dFyfr_dcs
 end
 
-function calc_d_ayaw_dcscla(Iz, steer, lf, lr, dF_yf_dcscla, dF_yr_dcscla)
-    d_ayaw_dcscla = ( lf*cos(steer)*dF_yf_dcscla - lr*dF_yr_dcscla )/Iz
-    return d_ayaw_dcscla
+#=
+Parameter estimation df/du calculations
+=#
+function calc_dalphafr_dvy(vx, vy, r, lfr)
+    dalphafr_dvy = vx / ( (vy + r*lfr)^2.0 +vx^2.0 )
 end
 
-function calc_d_ayaw_dIz(a_yaw, Iz)
-    d_ayaw_dIz = a_yaw/Iz
-    return d_ayaw_dIz
+function calc_dalphafr_dvx(vx, vy, r, lfr)
+    dalphafr_dvx = -(r*lfr + vy) / ( (vy + r*lfr)^2.0 +vx^2.0 )
 end
 
-function calc_d_ay_dcscla(steer, m, dF_yf_dcscla, dF_yr_dcscla)
-    d_ay_dcscla = ( cos(steer)*dF_yf_dcscla + dF_yr_dcscla )/m
-    return d_ay_dcscla
+function calc_dFyfr_dvx(Fzfr, lfr, alpha_fr, dalphafr_dvx, cornering_stiff, sample_Fz, l, rho, cla, vx)
+    dFyfr_dvx = cornering_stiff*(-Fzfr * dalphafr_dvx +alpha_fr*lfr*rho*cla*vx/l)/ sample_Fz
 end
 
-function calc_d_ax_dcscla(steer, m, dF_yf_dcscla)
-    d_ax_dcscla = ( sin(steer)*dF_yf_dcscla )/m
-    return d_ax_dcscla
+function calc_dFyfr_dvy()
 end
 
-
-function bicycle_model_est_p_spikes!(dudpc, udpc, p_stat, t)
+function bicycle_model_est_p_spikes!(dupcdp, upcdp, p_stat, t)
     # static params of the car
     m, l, lf, lr, sample_fz, rho, g = p_stat
 
     # unpack variables
     # states
-    u = udpc[1:7]
+    u = upcdp[1:7]
+    # unpack variables
+    x, y, psi, vx, vy, r, steer = u[1:7]
+
     # dynamic parameters of the car
-    udpc[8] = Iz
-    udpc[9] = cornering_stiff
-    udpc[10] = cla
+    Iz = upcdp[8]
+    cornering_stiff = upcdp[9]
+    cla = upcdp[10]
     p = [m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g]
 
     # accel command, commanded steer rate
-    command = udpc[11:12]
+    command = upcdp[11:12]
+    D, delta = command
 
-    # Calculate derivative of states
-    dudpc[1:7] .= bicycle_model(u, p, command)
+    # estimate normal
+    FzF, FzR = normal_force(u, command, p) # TODO
+
+    # compute slip angles
+    alpha_f = atan((vy + r * lf) / vx) + steer
+    alpha_r = atan((vy - r * lr) / vx)
+
+    # compute tire forces
+    F_yf = tire_force(alpha_f, FzF, p)
+    F_yr = tire_force(alpha_r, FzR, p)
+
+    # torque to force
+    F_net = m * D
+
+    # torque vectoring
+    F_xf = lf / l * F_net
+    F_xr = lr / l * F_net
+
+    # accel
+    ax = 1/m * (F_xr + F_xf * cos(steer) + F_yf * sin(steer)) + r * vy
+    ay = 1/m * (F_yr - F_xf * sin(steer) + F_yf * cos(steer)) - r * vx
+    a_yaw = 1/Iz * (-lf * F_xf * sin(steer) + lf * F_yf * cos(steer) - lr * F_yr)
+
+    # Calculate derivatives wrt p
+    dFyf_dcla = calc_dFyfr_dcla(vx, cornering_stiff, alpha_f, l, lf, sample_fz, rho)
+    dFyr_dcla = calc_dFyfr_dcla(vx, cornering_stiff, alpha_r, l, lr, sample_fz, rho)
+    dFyf_dcs = calc_dFyfr_dcs(alpha_f, FzF, sample_fz)
+    dFyr_dcs = calc_dFyfr_dcs(alpha_r, FzR, sample_fz)
+    # dayaw/dIz
+    dayaw_dIz = -a_yaw/Iz
+    # dayaw/dcs
+    dayaw_dcs = ( lf*cos(steer)*dFyf_dcs - lr*dFyr_dcs )/Iz
+    # dayaw/dcla
+    dayaw_dcla = ( lf*cos(steer)*dFyf_dcla - lr*dFyr_dcla )/Iz
+    # day/dcs
+    day_dcs = ( cos(steer)*dFyf_dcs + dFyr_dcs )/m
+    # day/dcla
+    day_dcla = ( cos(steer)*dFyf_dcla + dFyr_dcla )/m
+    # dax/dcs
+    dax_dcs = sin(steer) * dFyf_dcs / m
+    # dax/dcla
+    dax_dcla = sin(steer) * dFyf_dcla / m
+
+    # Calculate derivatives wrt u
+
+    dx_dpsi = -vx*sin(psi) - vy*cos(psi)
+    dx_dvx = cos(psi)
+    dx_dvy = -sin(psi)
+    dy_dpsi = vx*cos(psi) - vy*sin(psi)
+    dy_dvx = -dx_dvy
+    dy_dvy = dx_dvx
+
+    # calculate alpha derivatives
+    dalphaf_dvy = calc_dalphafr_dvy(vx, vy, r, lf)
+    dalphar_dvy = calc_dalphafr_dvy(vx, vy, -r, lr)
+    # dalphaf_dr = lf * dalphaf_dvy
+    # dalphar_dr = - lr * dalphar_dvy
+    dalphaf_dvx = calc_dalphafr_dvx(vx, vy, r, lf)
+    dalphar_dvx = calc_dalphafr_dvx(vx, vy, -r, lr)
+
+    # Calculate dFzfr intermediate derivatives
+    dFzf_dvx = -lf*rho*cla*vx/l
+    dFzr_dvx = -lr*rho*cla*vx/l
+
+    # calculate dFyfr intermediate derivatives
+    dFyf_dalphaf = -cornering_stiff * FzF / sample_fz
+    dFyr_dalphar = -cornering_stiff * FzR / sample_fz
+    dFyf_dFzf = -cornering_stiff * alpha_f / sample_fz
+    dFyr_dFzr = -cornering_stiff * alpha_r / sample_fz
+    # calculate dFyfr derivatives
+    dFyf_dvx = dFyf_dalphaf*dalphaf_dvx + dFyf_dFzf*dFzf_dvx
+    dFyr_dvx = dFyr_dalphar*dalphar_dvx + dFyr_dFzr*dFzr_dvx
+    dFyf_dvy = dFyf_dalphaf*dalphaf_dvy
+    dFyr_dvy = dFyr_dalphar*dalphar_dvy
+    # dFyf_dr = lf * dFyr_dvy
+    # dFyr_dr = -lr * dFyr_dvy
+    dFyf_dr = lf * dFyf_dalphaf*dalphaf_dvy
+    dFyr_dr = -lr * dFyr_dalphar*dalphar_dvy
+
+    # calculate ax derivatives
+    dax_dsteer = ( -F_xf*sin(steer)+F_yf*cos(steer)+sin(steer)*dFyf_dalphaf )/m
+    dax_dFyf = sin(steer)/m
+    dax_dr = vy + dax_dFyf*dFyf_dr
+    dax_dvx = dax_dFyf*dFyf_dvx
+    dax_dvy = r + dax_dFyf*dFyf_dvy
+
+    # calculate ay derivatives
+    day_dsteer = (-F_xf*cos(steer)-F_yf*sin(steer)+cos(steer)*dFyf_dalphaf )/m
+    day_dFyf = cos(steer)/m
+    day_dr = -vx + day_dFyf*dFyf_dr + dFyr_dr/m
+    day_dvx = -r + day_dFyf*dFyf_dvx + dFyr_dvx/m
+    day_dvy = day_dFyf*dFyf_dvy + dFyr_dvy/m
+
+    # calculate ayaw derivatives
+    dayaw_dsteer = lf*( -F_xf*cos(steer)-F_yf*sin(steer)+cos(steer)*dFyf_dalphaf )/Iz
+    dayaw_dFyf = lf*cos(steer)/Iz
+    dayaw_dr = dayaw_dFyf*dFyf_dr - lr*dFyr_dr/Iz
+    dayaw_dvx = dayaw_dFyf*dFyf_dvx - lr*dFyr_dvx/Iz
+    dayaw_dvy = dayaw_dFyf*dFyf_dvy - lr*dFyr_dvy/Iz
+
+    Jacobian = zeros((7,12))
+    Jacobian[1,3] = dx_dpsi
+    Jacobian[1,4] = dx_dvx
+    Jacobian[1,5] = dx_dvy
+    Jacobian[2,3] = dy_dpsi
+    Jacobian[2,4] = dy_dvx
+    Jacobian[2,5] = dy_dvy
+    Jacobian[3,6] = 1.0
+    Jacobian[4,4] = dax_dvx
+    Jacobian[4,5] = dax_dvy
+    Jacobian[4,6] = dax_dr
+    Jacobian[4,7] = dax_dsteer
+    Jacobian[5,4] = day_dvx
+	Jacobian[5,5] = day_dvy
+	Jacobian[5,6] = day_dr
+	Jacobian[5,7] = day_dsteer
+    Jacobian[6,4] = dayaw_dvx
+	Jacobian[6,5] = dayaw_dvy
+	Jacobian[6,6] = dayaw_dr
+	Jacobian[6,7] = dayaw_dsteer
+
+    Jacobian[4,9] = dax_dcs
+    Jacobian[4,10] = dax_dcla
+    Jacobian[5,9] = day_dcs
+    Jacobian[5,10] = day_dcla
+    Jacobian[6,8] = dayaw_dIz
+    Jacobian[6,9] = dayaw_dcs
+    Jacobian[6,10] = dayaw_dcla
+
+    return Jacobian
+
+    # # bicycle model
+    # dupcdp[1] = vx * cos(psi) - vy * sin(psi)  # sin/cos(x), x should be radians.. not sure if our data is in deg/rad
+    # dupcdp[2] = vx * sin(psi) + vy * cos(psi)
+    # dupcdp[3] = r
+    # dupcdp[4] = ax
+    # dupcdp[5] = ay
+    # dupcdp[6] = a_yaw
+    # dupcdp[7] = delta
 
 end
 
-function bicycle_model2(u, p, command)
-    # Create an array to store du in.
-    du = Vector{Float64}(undef, length(u))
-
-
-    # du[1] = vx * cos(psi) - vy * sin(psi)  # sin/cos(x), x should be radians.. not sure if our data is in deg/rad
-    # du[2] = vx * sin(psi) + vy * cos(psi)
-    # du[3] = r
-    # du[4] = ax
-    # du[5] = ay
-    # du[6] = a_yaw
-    # du[7] = delta
-    # return du
-end
-
+# Check to make sure the derivatives are calculated correctly
+#=
 function bicycle_model_est_p_Jacobian(udpc)
     # static params of the car
     m, l, lf, lr, sample_fz, rho, g = p_stat
@@ -365,18 +490,13 @@ function bicycle_model_est_p_Jacobian(udpc)
 
 end
 
-u_ex = [0.0, 0.0, pi, 5.0, 2.0, 0.01, -2.0]
-dp_ex = [540.0, 20000.0, -0.34]
-com_ex = [4.0, 0.02]
+u_ex = [0.0, 0.0, pi/2, 5.1, 2.3, 0.01, -2.0]
+dp_ex = [520.0, 24000.0, -0.2]
+com_ex = [4.2, 0.03]
 udpc_ex = vcat(u_ex, dp_ex, com_ex)
 dudpc_ex = zeros(12)
-
-bicycle_model_est_p_Jacobian(udpc_ex)
-
 using ForwardDiff
 @btime BM_Jacobian = ForwardDiff.jacobian(bicycle_model_est_p_Jacobian, udpc_ex)
-
-println("wah")
-for i in 1:7
-    println(BM_Jacobian[i,1:7])
-end
+@btime check_Jacobian = bicycle_model_est_p_spikes!(dudpc_ex, udpc_ex, p_stat, 0.0)
+isapprox(BM_Jacobian[:,1:10],check_Jacobian[:,1:10])
+=#
