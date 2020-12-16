@@ -82,6 +82,23 @@ function dormandprince(f, u, p, command, dt)
     out=u_next
 end
 
+### for non-mutating loss
+function dormandprince_no_mutate(f, u, p, command, dt)
+
+    #out = Array{Float64}(undef,7)
+    # Calculate the stages
+    k1 = f(u,p,command)
+    k2 = f(muladd(dt,a2*k1,u),p,command)
+    k3 = f(muladd(dt,muladd(a3[1],k1,a3[2]*k2),u),p,command)
+    k4 = f(muladd(dt,muladd(a4[1],k1,muladd(a4[2],k2,a4[3]*k3)),u),p,command)
+    k5 = f(muladd(dt,muladd(a5[1],k1,muladd(a5[2],k2,muladd(a5[3],k3,a5[4]*k4))),u),p,command)
+    k6 = f(muladd(dt,muladd(a6[1],k1,muladd(a6[2],k2,muladd(a6[3],k3,muladd(a6[4],k4,a6[5]*k5)))),u),p,command)
+    # The last step is only needed for error estimation
+    # Calculate the next u
+    return muladd(dt,muladd(b[1],k1,muladd(b[3],k3,muladd(b[4],k4,muladd(b[5],k5,b[6]*k6)))),u)
+
+end
+
 #=
 Noise functions
 =#
