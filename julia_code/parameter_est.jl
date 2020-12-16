@@ -2,120 +2,7 @@ cd(@__DIR__)
 # Depends on generate_data.jl which depends on bicycle_model.jl
 include("generate_data.jl")
 using Plots
-
-#Alternative method for data generation
-
-#=
-
-function example_g(t)
-
-    [sin(t), t, cos(t)]
-
-end
-
-
-u0 = [1,2,1,3,1,1,1,1]
-p = [1292.2, 3,1.006,1.534,0.5,8,0.5,0.1,0.2,0.1]
-data = gen_data(u0,example_g,p)
-normal_noisy_data = gen_data(u0,example_g,p,add_noise=percent_noise_normal)
-normal_noisy_data = gen_data(u0,example_g,p,add_noise=percent_noise_flat)
-normal_noisy_data = gen_data(u0,example_g,p,gen_params=change_params_percent_normal)
-normal_noisy_data = gen_data(u0,example_g,p,add_noise=percent_noise_normal,gen_params=change_params_percent_normal)
-=#
-
-# """
-#     change_params_percent_normal(params, i, percent_dp)
-#
-#     Takes params, an array of parameters, an index i, and a floating point
-#     percentage, percent_dp. For each of the parameters p, it computes a normally
-#     distributed change dp = N(0.0,percent_dp*p), and decides the sign of the
-#     change based on the sign of the previous dp. There is a 10% chance that the
-#     sign of dp differs from the previous dp.
-# """
-# function change_params_percent_normal(params, i, percent_dp)
-#     # Create a vector to store the new parameters in
-#     new_params = Vector{Float64}(undef,10)
-#     # Calculate the previous change in parameters to figure out its sign later
-#     if i > 2
-#         prev_dp = params[i-1,:] - params[i-2,:]
-#     else
-#         # Set prev_dp to an array of -1.0s for the first parameter change
-#         prev_dp = -1.0 * ones(Float64,length(params[i-1,:]))
-#     end
-#     # Iterate through the parametrs and calculate the next parameter
-#     for j in 1:length(params[i-1,:])
-#         # Pick a new parameter
-#         dp = abs(rand(Normal(0.0, percent_dp[j]*params[i-1,j])))
-#         # Generate a random number [0,1) to decide the sign of dp
-#         change_sign = rand(Float64)
-#         # Figure out the sign of the previous dp
-#         if prev_dp[j] < 0.0
-#             sign = -1.0
-#         else
-#             sign = 1.0
-#         end
-#         # 10% chance of changing the sign of dp from that of the previous dp
-#         if change_sign <= 0.1
-#             sign = sign*-1.0
-#         end
-#         # Add dp to the previous parameters
-#         new_params[j] = params[i-1,j] + sign * dp
-#     end
-#     return new_params
-# end
-
-# function gen_data(u0, g, p, collect_at=0:1:10; gen_params=false,
-#     percent_dp=1e-4*ones(Float64,10), add_noise=false, percent_noise=0.01)
-#     # Figure out number of data points to collect
-#     len=length(collect_at)
-#     # Array to store the state data in
-#     xs=Array{Float64,2}(undef,len,8)
-#     # Save the initial state
-#     xs[1,:]=u0
-#     # Arrays to store dxs and inputs in
-#     dxs=Array{Float64,2}(undef, len,8)
-#     inputs=Array{Float64,2}(undef, len,3)
-#
-#     # Create storage array if parameters are being modified
-#     if gen_params != false
-#         # Create an array to store parameters in
-#         params=Array{Float64,2}(undef,len, length(p))
-#         # Save the initial parameters
-#         params[1,:] = p
-#     end
-#
-#     # Generate the data
-#     for itr in 2:len
-#         # Generate inputs
-#         inputs[itr-1,:]=g(collect_at[itr-1])
-#
-#         # If parameters are to be changed,
-#         if gen_params != false
-#             # Update p
-#             p = gen_params(params, itr, percent_dp)
-#             # Save to params array
-#             params[itr,:] = p
-#         end
-#
-#         # Calculate dx
-#         dxs[itr,:]=bicycle_model(xs[itr-1,:], inputs[itr-1,:], p)
-#         # Compute next x
-#         # xs[itr,:].=xs[itr-1].+dxs[itr]
-#         xs[itr,:]=xs[itr-1,:].+dxs[itr,:]
-#
-#         # If noise is to be added
-#         if add_noise != false
-#             # Compute next x with noise
-#             xs[itr,:] = add_noise(xs[itr,:], percent_noise)
-#         end
-#     end
-#
-#     if gen_params == false
-#         return [collect_at, xs, dxs, inputs]
-#     else
-#         return [collect_at, xs, dxs, inputs, params]
-#     end
-# end
+using BenchmarkTools
 
 #=
 For parameter estimation, we want to look at the evolution of u over time, with
@@ -157,7 +44,7 @@ function bicycle_model_p!(dupc, upc, p_stat, p_command)
     # unpack variables
     # states
     u = upc[1:7]
-    x, y, psi, vx, vy, r, steer = u
+
     # dynamic parameters of the car
     Iz, cornering_stiff, cla = p_command[1]
     upc[8] = Iz
@@ -166,97 +53,35 @@ function bicycle_model_p!(dupc, upc, p_stat, p_command)
     p = [m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g]
     # commands
     command = p_command[2]
-    D, delta = command  # accel command, commanded steer rate
-    upc[11] = D
-    upc[12] = delta
+    upc[11:12] .= command
 
-    # estimate normal
-    FzF, FzR = normal_force(u, command, p)
-
-    # compute slip angles
-    alpha_f = atan((vy + r * lf) / vx) + steer
-    alpha_r = atan((vy - r * lr) / vx)
-
-
-    # compute tire forces
-    F_yf = tire_force(alpha_f, FzF, p)
-    F_yr = tire_force(alpha_r, FzR, p)
-
-    # torque to force
-    F_net = m * D
-
-    # torque vectoring
-    F_xf = lf / l * F_net
-    F_xr = lr / l * F_net
-
-    # accel
-    ax = 1/m * (F_xr + F_xf * cos(steer) + F_yf * sin(steer)) + r * vy
-    ay = 1/m * (F_yr - F_xf * sin(steer) + F_yf * cos(steer)) - r * vx
-    a_yaw = 1/Iz * (-lf * F_xf * sin(steer) + lf * F_yf * cos(steer) - lr * F_yr)
-
-    # bicycle model
-    dupc[1] = vx * cos(psi) - vy * sin(psi)  # sin/cos(x), x should be radians.. not sure if our data is in deg/rad
-    dupc[2] = vx * sin(psi) + vy * cos(psi)
-    dupc[3] = r
-    dupc[4] = ax
-    dupc[5] = ay
-    dupc[6] = a_yaw
-    dupc[7] = delta
+    # Calculate derivative of states
+    dupc[1:7] .= bicycle_model(u, p, command)
 
 end
 
-function bicycle_model_p_spikes!(dupc, upc, p_stat, updated_p)
+function bicycle_model_p_spikes!(dupc, upc, p_diffeq, t)
+    # Unpack parameter arrays
+    p_stat, p_update = p_diffeq
+
     # static params of the car
     m, l, lf, lr, sample_fz, rho, g = p_stat
 
     # unpack variables
     # states
     u = upc[1:7]
-    x, y, psi, vx, vy, r, steer = u
     # dynamic parameters of the car
-    Iz, cornering_stiff, cla = updated_p
+    Iz, cornering_stiff, cla = update_p(p_update, t)
     upc[8] = Iz
     upc[9] = cornering_stiff
     upc[10] = cla
     p = [m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g]
-    # commands
+
     # accel command, commanded steer rate
-    D = upc[11]
-    delta = upc[12]
-    command = D, delta
+    command = upc[11:12]
 
-    # estimate normal
-    FzF, FzR = normal_force(u, command, p)
-
-    # compute slip angles
-    alpha_f = atan((vy + r * lf) / vx) + steer
-    alpha_r = atan((vy - r * lr) / vx)
-
-
-    # compute tire forces
-    F_yf = tire_force(alpha_f, FzF, p)
-    F_yr = tire_force(alpha_r, FzR, p)
-
-    # torque to force
-    F_net = m * D
-
-    # torque vectoring
-    F_xf = lf / l * F_net
-    F_xr = lr / l * F_net
-
-    # accel
-    ax = 1/m * (F_xr + F_xf * cos(steer) + F_yf * sin(steer)) + r * vy
-    ay = 1/m * (F_yr - F_xf * sin(steer) + F_yf * cos(steer)) - r * vx
-    a_yaw = 1/Iz * (-lf * F_xf * sin(steer) + lf * F_yf * cos(steer) - lr * F_yr)
-
-    # bicycle model
-    dupc[1] = vx * cos(psi) - vy * sin(psi)  # sin/cos(x), x should be radians.. not sure if our data is in deg/rad
-    dupc[2] = vx * sin(psi) + vy * cos(psi)
-    dupc[3] = r
-    dupc[4] = ax
-    dupc[5] = ay
-    dupc[6] = a_yaw
-    dupc[7] = delta
+    # Calculate derivative of states
+    dupc[1:7] .= bicycle_model(u, p, command)
 
 end
 
@@ -347,12 +172,6 @@ function diffeq_bicycle_model_p!(dupc, upc, p_diffeq, t)
     bicycle_model_p!(dupc, upc, p_stat, p_command)
 end
 
-function diffeq_bicycle_model_p_spikes!(dupc, upc, p_diffeq, t)
-    # Unpack the static parameters and the
-    p_stat, p_update = p_diffeq
-    updated_p = update_p(p_update, t)
-    bicycle_model_p_spikes!(dupc, upc, p_stat, updated_p)
-end
 
 # Set up Sobol sequence for generating commands
 minmax_delta = 30.0*pi/360.0 # max change in delta is 15 degrees
@@ -369,7 +188,7 @@ sample_fz = 3430.0
 rho = 1.2
 g = 9.8
 # Assemble p_stat
-p_stat = [m, l, lf, lr, sample_fz, rho, g]
+global p_stat = [m, l, lf, lr, sample_fz, rho, g]
 # Define the parameters for updating the parameters
 Iz0 = 550.0
 Iz_max = 600.0
@@ -393,7 +212,6 @@ test_upc = ones(12)
 test_p_command = [[3.0,4,5],[6,7]]
 bicycle_model_p!(test_dupc, test_upc, p_stat, test_p_command)
 diffeq_bicycle_model_p!(test_dupc, upc0, p_diffeq, 0.0)
-diffeq_bicycle_model_p_spikes!(test_dupc, upc0, p_diffeq, 0.0)
 
 tspan = (0.0, 30.0)
 prob=ODEProblem(diffeq_bicycle_model_p!, upc0, tspan, p_diffeq) #doesn't set dt and uses adaptive time steping
@@ -405,16 +223,13 @@ plot(sol, vars=8) # Iz
 plot(sol, vars=9) # Cornering stiffness
 plot(sol, vars=10) # Cornering stiffness
 
-test_dupc
-test_upc
 
-
-spike_tmax = 450.0
+spike_tmax = 100.0
 spike_tspan = (0.0,spike_tmax)
 dosetimes = 0.0:0.5:spike_tmax
 affect!(integrator) = integrator.u[11:12] .= next!(command_s)
 cb = PresetTimeCallback(dosetimes,affect!)
-spike_prob=ODEProblem(diffeq_bicycle_model_p_spikes!, upc0, spike_tspan, p_diffeq)
+spike_prob=ODEProblem(bicycle_model_p_spikes!, upc0, spike_tspan, p_diffeq)
 spike_sol = solve(spike_prob,callback=cb, saveat=0.05)
 
 #plot path of car
@@ -424,3 +239,264 @@ plot(spike_sol, vars=9, xlabel="t", ylabel="Cornering Stiffness", title="Evoluti
 plot(spike_sol, vars=10, xlabel="t", ylabel="Cla", title="Evolution of Cla", legend=false)
 plot(spike_sol, vars=11, xlabel="t", ylabel="D", title="Parameter Estimation Input Acceleration", legend=false)
 plot(spike_sol, vars=12, xlabel="t", ylabel="delta", title="Parameter Estimation Input Steering", legend=false)
+
+
+#=
+Parameter estimation df/dp calculations
+=#
+function calc_dFyfr_dcla(vx, cornering_stiff, alphafr, l, lfr, sample_Fz, rho)
+    dFyfr_dcla = 0.5 * alphafr * cornering_stiff * lf * rho * vx^2.0 / (sample_Fz * l)
+    return dFyfr_dcla
+end
+
+function calc_dFyfr_dcs(alphafr, Fzfr, sample_Fz)
+    dFyfr_dcs = -alphafr * Fzfr / sample_Fz
+    return dFyfr_dcs
+end
+
+#=
+Parameter estimation df/du calculations
+=#
+function calc_dalphafr_dvy(vx, vy, r, lfr)
+    dalphafr_dvy = vx / ( (vy + r*lfr)^2.0 +vx^2.0 )
+end
+
+function calc_dalphafr_dvx(vx, vy, r, lfr)
+    dalphafr_dvx = -(r*lfr + vy) / ( (vy + r*lfr)^2.0 +vx^2.0 )
+end
+
+function calc_dFyfr_dvx(Fzfr, lfr, alpha_fr, dalphafr_dvx, cornering_stiff, sample_Fz, l, rho, cla, vx)
+    dFyfr_dvx = cornering_stiff*(-Fzfr * dalphafr_dvx +alpha_fr*lfr*rho*cla*vx/l)/ sample_Fz
+end
+
+function calc_dFyfr_dvy()
+end
+
+function bicycle_model_est_p_spikes!(dupcdp, upcdp, p_stat, t)
+    # static params of the car
+    m, l, lf, lr, sample_fz, rho, g = p_stat
+
+    # unpack variables
+    # states
+    u = upcdp[1:7]
+    # unpack variables
+    x, y, psi, vx, vy, r, steer = u[1:7]
+
+    # dynamic parameters of the car
+    Iz = upcdp[8]
+    cornering_stiff = upcdp[9]
+    cla = upcdp[10]
+    p = [m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g]
+
+    # accel command, commanded steer rate
+    command = upcdp[11:12]
+    D, delta = command
+
+    # estimate normal
+    FzF, FzR = normal_force(u, command, p) # TODO
+
+    # compute slip angles
+    alpha_f = atan((vy + r * lf) / vx) + steer
+    alpha_r = atan((vy - r * lr) / vx)
+
+    # compute tire forces
+    F_yf = tire_force(alpha_f, FzF, p)
+    F_yr = tire_force(alpha_r, FzR, p)
+
+    # torque to force
+    F_net = m * D
+
+    # torque vectoring
+    F_xf = lf / l * F_net
+    F_xr = lr / l * F_net
+
+    # accel
+    ax = 1/m * (F_xr + F_xf * cos(steer) + F_yf * sin(steer)) + r * vy
+    ay = 1/m * (F_yr - F_xf * sin(steer) + F_yf * cos(steer)) - r * vx
+    a_yaw = 1/Iz * (-lf * F_xf * sin(steer) + lf * F_yf * cos(steer) - lr * F_yr)
+
+    # Calculate derivatives wrt p
+    dFyf_dcla = calc_dFyfr_dcla(vx, cornering_stiff, alpha_f, l, lf, sample_fz, rho)
+    dFyr_dcla = calc_dFyfr_dcla(vx, cornering_stiff, alpha_r, l, lr, sample_fz, rho)
+    dFyf_dcs = calc_dFyfr_dcs(alpha_f, FzF, sample_fz)
+    dFyr_dcs = calc_dFyfr_dcs(alpha_r, FzR, sample_fz)
+    # dayaw/dIz
+    dayaw_dIz = -a_yaw/Iz
+    # dayaw/dcs
+    dayaw_dcs = ( lf*cos(steer)*dFyf_dcs - lr*dFyr_dcs )/Iz
+    # dayaw/dcla
+    dayaw_dcla = ( lf*cos(steer)*dFyf_dcla - lr*dFyr_dcla )/Iz
+    # day/dcs
+    day_dcs = ( cos(steer)*dFyf_dcs + dFyr_dcs )/m
+    # day/dcla
+    day_dcla = ( cos(steer)*dFyf_dcla + dFyr_dcla )/m
+    # dax/dcs
+    dax_dcs = sin(steer) * dFyf_dcs / m
+    # dax/dcla
+    dax_dcla = sin(steer) * dFyf_dcla / m
+
+    # Calculate derivatives wrt u
+
+    dx_dpsi = -vx*sin(psi) - vy*cos(psi)
+    dx_dvx = cos(psi)
+    dx_dvy = -sin(psi)
+    dy_dpsi = vx*cos(psi) - vy*sin(psi)
+    dy_dvx = -dx_dvy
+    dy_dvy = dx_dvx
+
+    # calculate alpha derivatives
+    dalphaf_dvy = calc_dalphafr_dvy(vx, vy, r, lf)
+    dalphar_dvy = calc_dalphafr_dvy(vx, vy, -r, lr)
+    # dalphaf_dr = lf * dalphaf_dvy
+    # dalphar_dr = - lr * dalphar_dvy
+    dalphaf_dvx = calc_dalphafr_dvx(vx, vy, r, lf)
+    dalphar_dvx = calc_dalphafr_dvx(vx, vy, -r, lr)
+
+    # Calculate dFzfr intermediate derivatives
+    dFzf_dvx = -lf*rho*cla*vx/l
+    dFzr_dvx = -lr*rho*cla*vx/l
+
+    # calculate dFyfr intermediate derivatives
+    dFyf_dalphaf = -cornering_stiff * FzF / sample_fz
+    dFyr_dalphar = -cornering_stiff * FzR / sample_fz
+    dFyf_dFzf = -cornering_stiff * alpha_f / sample_fz
+    dFyr_dFzr = -cornering_stiff * alpha_r / sample_fz
+    # calculate dFyfr derivatives
+    dFyf_dvx = dFyf_dalphaf*dalphaf_dvx + dFyf_dFzf*dFzf_dvx
+    dFyr_dvx = dFyr_dalphar*dalphar_dvx + dFyr_dFzr*dFzr_dvx
+    dFyf_dvy = dFyf_dalphaf*dalphaf_dvy
+    dFyr_dvy = dFyr_dalphar*dalphar_dvy
+    # dFyf_dr = lf * dFyr_dvy
+    # dFyr_dr = -lr * dFyr_dvy
+    dFyf_dr = lf * dFyf_dalphaf*dalphaf_dvy
+    dFyr_dr = -lr * dFyr_dalphar*dalphar_dvy
+
+    # calculate ax derivatives
+    dax_dsteer = ( -F_xf*sin(steer)+F_yf*cos(steer)+sin(steer)*dFyf_dalphaf )/m
+    dax_dFyf = sin(steer)/m
+    dax_dr = vy + dax_dFyf*dFyf_dr
+    dax_dvx = dax_dFyf*dFyf_dvx
+    dax_dvy = r + dax_dFyf*dFyf_dvy
+
+    # calculate ay derivatives
+    day_dsteer = (-F_xf*cos(steer)-F_yf*sin(steer)+cos(steer)*dFyf_dalphaf )/m
+    day_dFyf = cos(steer)/m
+    day_dr = -vx + day_dFyf*dFyf_dr + dFyr_dr/m
+    day_dvx = -r + day_dFyf*dFyf_dvx + dFyr_dvx/m
+    day_dvy = day_dFyf*dFyf_dvy + dFyr_dvy/m
+
+    # calculate ayaw derivatives
+    dayaw_dsteer = lf*( -F_xf*cos(steer)-F_yf*sin(steer)+cos(steer)*dFyf_dalphaf )/Iz
+    dayaw_dFyf = lf*cos(steer)/Iz
+    dayaw_dr = dayaw_dFyf*dFyf_dr - lr*dFyr_dr/Iz
+    dayaw_dvx = dayaw_dFyf*dFyf_dvx - lr*dFyr_dvx/Iz
+    dayaw_dvy = dayaw_dFyf*dFyf_dvy - lr*dFyr_dvy/Iz
+
+    Jacobian = zeros((7,12))
+    Jacobian[1,3] = dx_dpsi
+    Jacobian[1,4] = dx_dvx
+    Jacobian[1,5] = dx_dvy
+    Jacobian[2,3] = dy_dpsi
+    Jacobian[2,4] = dy_dvx
+    Jacobian[2,5] = dy_dvy
+    Jacobian[3,6] = 1.0
+    Jacobian[4,4] = dax_dvx
+    Jacobian[4,5] = dax_dvy
+    Jacobian[4,6] = dax_dr
+    Jacobian[4,7] = dax_dsteer
+    Jacobian[5,4] = day_dvx
+	Jacobian[5,5] = day_dvy
+	Jacobian[5,6] = day_dr
+	Jacobian[5,7] = day_dsteer
+    Jacobian[6,4] = dayaw_dvx
+	Jacobian[6,5] = dayaw_dvy
+	Jacobian[6,6] = dayaw_dr
+	Jacobian[6,7] = dayaw_dsteer
+
+    Jacobian[4,9] = dax_dcs
+    Jacobian[4,10] = dax_dcla
+    Jacobian[5,9] = day_dcs
+    Jacobian[5,10] = day_dcla
+    Jacobian[6,8] = dayaw_dIz
+    Jacobian[6,9] = dayaw_dcs
+    Jacobian[6,10] = dayaw_dcla
+
+    return Jacobian
+
+    # # bicycle model
+    # dupcdp[1] = vx * cos(psi) - vy * sin(psi)  # sin/cos(x), x should be radians.. not sure if our data is in deg/rad
+    # dupcdp[2] = vx * sin(psi) + vy * cos(psi)
+    # dupcdp[3] = r
+    # dupcdp[4] = ax
+    # dupcdp[5] = ay
+    # dupcdp[6] = a_yaw
+    # dupcdp[7] = delta
+
+end
+
+# Check to make sure the derivatives are calculated correctly
+#=
+function bicycle_model_est_p_Jacobian(udpc)
+    # static params of the car
+    m, l, lf, lr, sample_fz, rho, g = p_stat
+
+    # unpack variables
+    # states
+    u = udpc[1:7]
+    # unpack variables
+    x, y, psi, vx, vy, r, steer = u
+    # dynamic parameters of the car
+    Iz = udpc[8]
+    cornering_stiff = udpc[9]
+    cla = udpc[10]
+    p = [m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g]
+
+    # accel command, commanded steer rate
+    command = udpc[11:12]
+    D, delta = command  # velocity along path, accel command, commanded steer rate
+
+    # estimate normal
+    FzF, FzR = normal_force(u, command, p)
+
+    # compute slip angles
+    alpha_f = atan((vy + r * lf) / vx) + steer
+    alpha_r = atan((vy - r * lr) / vx)
+
+    # compute tire forces
+    F_yf = tire_force(alpha_f, FzF, p)
+    F_yr = tire_force(alpha_r, FzR, p)
+
+    # torque to force
+    F_net = m * D
+
+    # torque vectoring
+    F_xf = lf / l * F_net
+    F_xr = lr / l * F_net
+
+    # accel
+    ax = 1/m * (F_xr + F_xf * cos(steer) + F_yf * sin(steer)) + r * vy
+    ay = 1/m * (F_yr - F_xf * sin(steer) + F_yf * cos(steer)) - r * vx
+    a_yaw = 1/Iz * (-lf * F_xf * sin(steer) + lf * F_yf * cos(steer) - lr * F_yr)
+
+    # bicycle model
+    xdot = vx * cos(psi) - vy * sin(psi)  # sin/cos(x), x should be radians.. not sure if our data is in deg/rad
+    ydot = vx * sin(psi) + vy * cos(psi)
+    psidot = r
+    vxdot = ax
+    vydot = ay
+    rdot = a_yaw
+    steerdot = delta
+    return [xdot, ydot, psidot, vxdot, vydot, rdot, steerdot]
+
+end
+
+u_ex = [0.0, 0.0, pi/2, 5.1, 2.3, 0.01, -2.0]
+dp_ex = [520.0, 24000.0, -0.2]
+com_ex = [4.2, 0.03]
+udpc_ex = vcat(u_ex, dp_ex, com_ex)
+dudpc_ex = zeros(12)
+using ForwardDiff
+@btime BM_Jacobian = ForwardDiff.jacobian(bicycle_model_est_p_Jacobian, udpc_ex)
+@btime check_Jacobian = bicycle_model_est_p_spikes!(dudpc_ex, udpc_ex, p_stat, 0.0)
+isapprox(BM_Jacobian[:,1:10],check_Jacobian[:,1:10])
+=#

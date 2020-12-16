@@ -300,12 +300,14 @@ max_cla = -0.3
 lb = [min_psi, min_v, min_v, -minmax_r, -minmax_steer, min_D, -minmax_delta, min_m, min_l, min_lflr, min_Iz, min_cornering_stiff, min_cla]
 ub = [max_psi, max_v, max_v, minmax_r, minmax_steer, max_D, minmax_delta, max_m, max_l, max_lflr, max_Iz, max_cornering_stiff, max_cla]
 
+#=
 gen_data(5, lb, ub)
-# output row: [psi0, vx0, vy0, r0, steer0, D, delta, cornering_stiff, x, y, psi, vx, vy, r, steer]
+# output row: [psi0, vx0, vy0, r0, steer0, D, delta, m, l, lf/lr, Iz, cornering_stiff, cla, x, y, psi, vx, vy, r, steer]
 gen_data(5, lb, ub, add_noise=normal_noise)
-# output row: [psi0, vx0, vy0, r0, steer0, D, delta, cornering_stiff, x, y, psi, vx, vy, r, steer, x_noise, y_noise, psi_noise, vx_noise, vy_noise, r_noise, steer_noise]
+# output row: [psi0, vx0, vy0, r0, steer0, D, delta, m, l, lf/lr, Iz, cornering_stiff, cla, x, y, psi, vx, vy, r, steer, x_noise, y_noise, psi_noise, vx_noise, vy_noise, r_noise, steer_noise]
 gen_data(5, lb, ub, add_unacc=ex_unacc_sine, unacc_p = [0.04])
 gen_data(5, lb, ub, add_noise=normal_noise, add_unacc=ex_unacc_sine, unacc_p = [0.04])
+=#
 
 #=
 Plotting example with commands at fixed time step
