@@ -111,43 +111,45 @@ function get_data_no_noise(num_data, lb, ub)
   # 1:7 inputs
   # 9:15 outputs
 
-  return x, y
+  return x
 end
 
-num_time_points = 10
+num_time_points = 20
 tspan = (0.0f0,1.0f0)
+t = range(tspan[1],tspan[2],length=num_time_points)
 
-datasize = 10
+datasize = 50
 
 num_train = floor(Int, 0.8*datasize)
 num_valid = floor(Int, 0.1*datasize)
 num_test = floor(Int, 0.1*datasize)
 
 dudt = Chain(x->vcat(x,P),
-             Dense(17,50,tanh),
+             Dense(17,50,relu),
+             Dense(50,50,relu),
              Dense(50,7))
 
 n_ode = NeuralODE(dudt,tspan,Tsit5(),saveat=t,reltol=1e-4,abstol=1e-4) # decrease tolerances
 
 ps = Flux.params(n_ode)
 
-xtrain, ytrain = get_data_no_noise(num_train, lb, ub)
-t = range(tspan[1],tspan[2],length=num_time_points)
+xtrain = get_data_no_noise(num_train, lb, ub)
 ode_data = Array{Float32, 2}(undef, 9, 0)
 for i=1:num_train
   u0 = xtrain[i, :]
-  prob = ODEProblem(diffeq_bicycle_model,U0,tspan,P)
+  prob = ODEProblem(diffeq_bicycle_model,u0,tspan,P)
   ode_data = hcat(ode_data, Array(solve(prob,Tsit5(),saveat=t)))
 end
 
 pl = scatter() # clears the plot
-reds=range(colorant"lightsalmon", stop=colorant"red4", length=datasize)
-blues=range(colorant"skyblue", stop=colorant"navy", length=datasize)
+reds=range(colorant"lightsalmon", stop=colorant"red4", length=num_train)
+blues=range(colorant"skyblue", stop=colorant"navy", length=num_train)
 # pred = Array(n_ode(U0[1:7])) # Get the prediction using the correct initial condition
-for i=1:num_train-1
-  scatter!(t,ode_data[1:3,i*num_time_points:(i+1)*num_time_points-1]',label="",color=blues[i])
+for i=1:num_train
+  scatter!(t,ode_data[1:3,(i-1)*num_time_points+1:i*num_time_points]',label="",color=blues[i])
   # scatter!(t,ode_data[1:3,i*num_time_points:(i+1)*num_time_points-1]')
 end
+scatter!()
 function predict_n_ode()
   preds = Array{Float32, 2}(undef, 7, 0)
   for i=1:num_train
@@ -157,24 +159,26 @@ function predict_n_ode()
   end
   return preds
 end
-loss_n_ode() = 1/(num_time_points * datasize) * sum(abs2,Array(ode_data)[1:7,:].- predict_n_ode())
+loss_n_ode() = sum(abs2,Array(ode_data)[1:7,:].- predict_n_ode())
 predict_n_ode()
 scatter!()
 loss_n_ode()
 
 data = Iterators.repeated((), 1000)
-opt = ADAM(0.003)
+opt = ADAM(0.002)
 iter = 0
 cb = function () #callback function to observe training
   if iter % 10 == 0
     display(loss_n_ode())
     # plot current prediction against data
-    pl = scatter()
-    for i=1:num_train-1
-      scatter!(t,ode_data[1:3,i*num_time_points:(i+1)*num_time_points-1]',label="",color=blues[i])
+    # pl = scatter()
+    for i=1:num_train
+      pl = scatter()
+      scatter!(t,ode_data[1:3,(i-1)*num_time_points+1:i*num_time_points]',label="",color=blues[i])
       pred = Array(n_ode(xtrain[i, 1:7]))
       scatter!(t,pred[1:3,:]',label="",color=reds[i])
       display(plot(pl))
+      savefig(pl, string("true_pred_", i))
     end
     # pl = scatter(t,ode_data[1:3,:]',label="data",color=:blue)
     # scatter!(t,cur_pred[1:3,:]',label="prediction",color=:orange)
@@ -189,5 +193,31 @@ cb()
 
 Flux.train!(loss_n_ode, ps, data, opt, cb = cb)
 
-# pl = scatter(t,ode_data[1:3,:]',label=["data x" "data y" "data psi"])
-# cur_pred = predict_n_ode()
+### validation/test 
+xvalid = get_data_no_noise(num_valid, lb, ub)
+ode_data = Array{Float32, 2}(undef, 9, 0)
+for i=1:num_valid
+  u0 = xvalid[i, :]
+  prob = ODEProblem(diffeq_bicycle_model,u0,tspan,P)
+  ode_data = hcat(ode_data, Array(solve(prob,Tsit5(),saveat=t)))
+end
+for i=1:num_valid
+  pl = scatter()
+  scatter!(t,ode_data[1:3,(i-1)*num_time_points+1:i*num_time_points]',label="",color=blues[i])
+  pred = Array(n_ode(xvalid[i, 1:7]))
+  scatter!(t,pred[1:3,:]',label="",color=reds[i])
+  display(plot(pl))
+  savefig(pl, string("valid_", i))
+end
+function predict_n_ode_valid()
+  preds = Array{Float32, 2}(undef, 7, 0)
+  for i=1:num_valid
+    pred = Array(n_ode(xvalid[i, 1:7]))
+    # scatter!(t,pred[1:3,:]',label="",color=reds[i])
+    preds = hcat(preds, pred)
+  end
+  return preds
+end
+loss_n_ode() = sum(abs2,Array(ode_data)[1:7,:].- predict_n_ode_valid())
+print(loss_n_ode())
+# 2 layer (50) 5000 iters 0.002 lr 16566.21937421601 loss
