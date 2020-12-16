@@ -3,7 +3,10 @@ using Pkg
 Pkg.activate(".")
 
 using Flux, DiffEqBase, OrdinaryDiffEq, Plots, DataStructures, DiffEqFlux, Zygote
-
+using DiffEqFlux
+##########################################################
+####### DAVID's OG NEURAL ODE ###########################
+##########################################################
 U0=Float32[1.0,1.0,1.0,5.0,1.0,1.0,1.0,1.0,1.0] #9
 PT=Float32[350.0,3.0,1.5,1.5,550.0,10000.0,3430.0,1.2,-0.5,9.8] #10
 P=PT./[100,1,1,1,100,10000,1000,1,1,1] # normalization
@@ -65,7 +68,16 @@ display(plot(pl))
 png("neuralODE_train")
 
 
-## let's now try to get this to train faster, on different data
+##########################################################
+########## KYLIES ADDITIONS ##############################
+##########################################################
+
+# just set the parameters and normalize them
+PT=Float32[350.0,3.0,1.5,1.5,550.0,10000.0,3430.0,1.2,-0.5,9.8] #10
+P=PT./[100,1,1,1,100,10000,1000,1,1,1] # normalization
+
+# gpu stuff
+# Pkg.add("CUDA")
 using CUDA
 if has_cuda()
     @info "CUDA is on"
@@ -115,7 +127,7 @@ function get_data_no_noise(num_data, lb, ub)
 end
 
 num_time_points = 20
-tspan = (0.0f0,1.0f0)
+tspan = (0.0f0,5.0f0)
 t = range(tspan[1],tspan[2],length=num_time_points)
 
 datasize = 50
