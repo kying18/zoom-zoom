@@ -27,6 +27,7 @@ function unpack_MATs(mat_overpath="../roborace_data/SpeedGoat.mat")
 
 
     #(1)x, (2)y, (3)psi, (4)vx, (5)vy, (6)r, (7)steer, (8)D, (9) Delta
+    #                                                ^^comm(1), comm(2)
     u_block = [x_block, y_block, psi_block, vx_block, vy_block, r_block, steer_block, D_block, Delta_block]
 
     return u_block
