@@ -150,7 +150,7 @@ ode_data = Array{Float32, 2}(undef, 9, 0)
 for i=1:num_train
   u0 = xtrain[i, :]
   prob = ODEProblem(diffeq_bicycle_model,u0,tspan,P)
-  ode_data = hcat(ode_data, Array(solve(prob,Tsit5(),saveat=t)))
+  global ode_data = hcat(ode_data, Array(solve(prob,Tsit5(),saveat=t)))
 end
 
 pl = scatter() # clears the plot
@@ -205,7 +205,7 @@ cb()
 
 Flux.train!(loss_n_ode, ps, data, opt, cb = cb)
 
-### validation/test 
+### validation/test
 xvalid = get_data_no_noise(num_valid, lb, ub)
 ode_data = Array{Float32, 2}(undef, 9, 0)
 for i=1:num_valid
