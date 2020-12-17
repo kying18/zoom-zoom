@@ -204,10 +204,13 @@ stat_dosetimes = 0.0:c_step:spike_tmax
 stat_affect!(integrator) = integrator.u[8:9] .= find_command(spike_sol, c_step, s_step, integrator.t)
 stat_cb = PresetTimeCallback(dosetimes,stat_affect!)
 stat_prob=ODEProblem(bicycle_model_callback!, u0_cb, (0.0,spike_tmax), p_cb)
-stat_sol = solve(stat_prob, callback=stat_cb, Tsit5(), dt = 0.001, adaptive=false, saveat=s_step)
+stat_sol = solve(stat_prob, callback=stat_cb, Tsit5(), saveat=s_step)
 
 plot(stat_sol, vars=(1,2)) # (x,y)
-
+plot!(xlabel="x", ylabel="y",
+    title="Static Parameter XY Trajectory",
+    legend=false, xlims=(-120,110),ylims=(-360,0))
+savefig("stat_p trajectory.png")
 
 
 
@@ -765,8 +768,8 @@ plot(spike_sol, vars=8, xlabel="t", ylabel="Iz", title="Evolution of Iz", label=
 plot!(t_plot, estimated_p, label="est" )
 savefig("Evolution Iz only.png")
 
-plot(spike_sol, vars=(1,2), xlabel="x", ylabel="Iz", title="XY Trajectory", legend=false)
-plot!(xlims=(-110,110),ylims=(-360,0))
+plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", legend=false)
+plot!(title="True XY Trajectory", xlims=(-120,110),ylims=(-360,0))
 savefig("true trajectory Iz only.png")
 plot_est_dosetimes = est_t0:c_step:est_tf
 plot_est_affect!(integrator) = integrator.u[9:10] .= find_command(spike_sol, c_step, s_step, integrator.t)
@@ -774,7 +777,7 @@ plot_est_cb = PresetTimeCallback(plot_est_dosetimes, plot_est_affect!)
 t_range = est_t0:dt:est_tf-est_tspan
 upcdp_est = zeros(16)
 plot_p_est = [p_stat, dBM_du0, dBM_dp0]
-plot([], xlabel="x", ylabel="Iz", title="XY Trajectory", legend=false)
+plot([], xlabel="x", ylabel="y", title="Estimated XY Trajectory", legend=false)
 for i in 1:length(t_range)-1
     # Figure out the initial and end time
     plot_est_t0 = t_range[i]
@@ -788,5 +791,13 @@ for i in 1:length(t_range)-1
     plot_est_sol = solve(plot_est_prob, callback=plot_est_cb, Tsit5(), saveat=s_step)
     plot!(plot_est_sol, vars=(1,2))
 end
-plot!(xlims=(-110,110),ylims=(-360,0))
+plot!(title="Est XY Trajectory", xlims=(-120,110),ylims=(-360,0))
 savefig("est trajectory Iz only.png")
+plot!(title="True vs Est XY Trajectory", xlims=(-120,110),ylims=(-360,0))
+savefig("true vs est trajectory Iz only.png")
+
+plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", label="true", legend= :outerright)
+plot!(stat_sol, vars=(1,2), label="static p") # (x,y)
+plot!(xlabel="x", ylabel="y", title="True vs Stat XY Trajectory",
+    xlims=(-120,110),ylims=(-360,0))
+savefig("true v stat trajectory Iz only.png")
