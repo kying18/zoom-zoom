@@ -333,3 +333,50 @@ callback_sol = solve(callback_prob,callback=cb, saveat=0.05)
 
 plot(callback_sol, vars=(1,2), xlabel="x", ylabel="y", title="Vehicle Trajectory") # (x, y)
 =#
+
+#=
+Generate randomly initialized time series data
+=#
+# Set up Sobol Sequence generators
+global init_lb = [min_psi, min_v, min_v, -minmax_r, -minmax_steer, min_m, min_l, min_lflr, min_Iz, min_cornering_stiff, min_cla]
+global init_ub = [max_psi, max_v, max_v, minmax_r, minmax_steer, max_m, max_l, max_lflr, max_Iz, max_cornering_stiff, max_cla]
+global init_s = SobolSeq(init_lb, init_ub)
+# Set up Sobol sequence for generating commands
+minmax_delta = 30.0*pi/360.0 # max change in delta is 15 degrees
+global command_lb = [min_D, -minmax_delta] # Change value above to change bounds
+global command_ub = [max_D, minmax_delta]
+
+function gen_rand_time_data(tspan)
+    # Define static parameters
+    rho = 1.2
+    g = 9.8
+    # Restart the command Sobol sequences
+    command_s = SobolSeq(command_lb, command_ub)
+
+    # Generate new initial state
+    init_x = next!(init_s)
+    # Update the states, commands, and changed parameters
+    u = vcat(zeros(2), init_x[1:5], zeros(2))
+    m = init_x[6]     # mass
+    l = init_x[7]     # length
+    lflr = init_x[8] # lf/lr
+    Iz = init_x[9]   # Iz
+    cornering_stiff = init_x[10]    # cornering stiffness
+    sample_fz = init_x[6]*g # sample_fz = mass * gravity
+    cla = init_x[11]
+    p = [m, l, lflr, lflr, Iz, cornering_stiff, sample_fz, rho, cla, g]
+    # When commands are applied
+    dosetimes = tspan[1]:0.5:tspan[2]
+    affect!(integrator) = integrator.u[8:9] .= next!(command_s)
+    rand_cb = PresetTimeCallback(dosetimes,affect!)
+    rand_prob=ODEProblem(bicycle_model_callback!, u, tspan, p)
+    rand_sol = solve(rand_prob,callback=rand_cb, saveat=0.05)
+    return [p, rand_sol]
+end
+
+#= Example
+=#
+t_span_ex = (0,10.0)
+p_used, ex_sol = gen_rand_time_data(t_span_ex)
+# p = [m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g]
+# u of ex_sol is [x, y, psi, vx, vy, r, steer, D, delta]
