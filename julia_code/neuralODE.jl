@@ -117,7 +117,7 @@ ub = [max_psi, max_v, max_v, minmax_r, minmax_steer, max_D, minmax_delta, max_m,
 
 function get_data_no_noise(num_data, lb, ub)
   data = gen_data(num_data, lb, ub)
-  x = hcat(zeros(num_data, 2), data[:,1:7])
+  x = hcat(rand(num_data, 2), data[:,1:7])
 
   # [psi0, vx0, vy0, r0, steer0, D, delta, cornering_stiff, x, y, psi, vx, vy, r, steer]
   # 1:7 inputs
@@ -130,16 +130,16 @@ num_time_points = 20
 tspan = (0.0f0,5.0f0)
 t = range(tspan[1],tspan[2],length=num_time_points)
 
-datasize = 50
+datasize = 20
 
 num_train = floor(Int, 0.8*datasize)
 num_valid = floor(Int, 0.1*datasize)
 num_test = floor(Int, 0.1*datasize)
 
 dudt = Chain(x->vcat(x,P),
-             Dense(17,50,relu),
-             Dense(50,50,relu),
-             Dense(50,7))
+             Dense(17,30,relu),
+             Dense(30,30,relu),
+             Dense(30,7))
 
 n_ode = NeuralODE(dudt,tspan,Tsit5(),saveat=t,reltol=1e-4,abstol=1e-4) # decrease tolerances
 
