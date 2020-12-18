@@ -356,7 +356,7 @@ test_dp = zeros(6)
 test_upcdp = vcat(test_upc, test_dp)
 test_dupcdp = zeros(30)
 test_t = 0.0
-test_pstat = [m, l, lf, lr, Iz0, sample_fz, rho, cla0, g]
+test_pstat = [m, l, lf, lr, Iz0, sample_fz, rho, cla, g]
 @code_warntype bicycle_model_est_p!(test_dupcdp, test_upcdp, test_pstat, test_t)
 =#
 
@@ -516,6 +516,8 @@ function gradient_descent(alpha, n_itr, bounds, data_sol, time_arr, upcdp0, p_st
     # Create an array to work with
     upcdp = copy(upcdp0)
 
+    p_est_data = Vector{Array{Float64,1}}()
+
     # Unpack the bounds
     p_lb = bounds[1]
     u_lb = bounds[2]
@@ -527,11 +529,12 @@ function gradient_descent(alpha, n_itr, bounds, data_sol, time_arr, upcdp0, p_st
     p_est_affect!(integrator) = integrator.u[9:10] .= find_command(data_sol, com_step, save_step, integrator.t)
     p_est_cb = PresetTimeCallback(p_est_dosetimes, p_est_affect!)
 
-    for i in 1:n_itr
+    # for i in 1:n_itr
         # Solve the ODE
         p_est_prob=ODEProblem(bicycle_model_est_p!, upcdp, p_est_tspan, p_stat)
         # p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
         p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=save_step)
+
         # Calculate the cost and the gradient for each new p
         C, dCdp = calc_dCdp(p_est_sol, spike_sol)
 
@@ -549,8 +552,8 @@ function gradient_descent(alpha, n_itr, bounds, data_sol, time_arr, upcdp0, p_st
 
         # Switch the parameter arrays
         p_prev, p_next = p_next, p_prev
-
-    end
+    #
+    # end
     return(C, p_prev)
 end
 
@@ -565,7 +568,7 @@ p_ub = 52000.0
 est_bounds = [p_lb, p_ub]
 p_est_tf = 1.0
 time_array = [0.0, p_est_tf, c_step, s_step]
-alpha_cs = 5.0
+alpha_cs = 0.5
 n_itr = 500
 test_C, test_p = gradient_descent_store(alpha_cs, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
 test_cost, test_p_estimated = gradient_descent(alpha_cs, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
@@ -583,6 +586,8 @@ plot(test_p, title="cs Evolution", xlabel="steps", ylabel="cs", legend=false)
 # Gradient Descent Profiling Analysis
 @btime test_cost, test_p_estimated = gradient_descent(alpha_cs, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
 @code_warntype gradient_descent(alpha_cs, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
+@profile gradient_descent(alpha_cs, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
+Juno.profiler()
 =#
 
 # Find the commands used to generate the data with real parameters
@@ -599,7 +604,6 @@ end
 function est_param(alpha, n_itr, bounds, time_arr, data_sol, dynp_est0, p_stat)
     # Unpack the time array
     dt, tspan, t0, tf, com_step, save_step = time_arr
-    gd_time_arr = [t0, tf, com_step, save_step]
     # Create a time range
     t_range = t0:dt:tf-tspan
 
@@ -617,9 +621,7 @@ function est_param(alpha, n_itr, bounds, time_arr, data_sol, dynp_est0, p_stat)
         # Figure out the initial and end time
         p_est_t0 = t_range[i]
         p_est_tf = p_est_t0+tspan
-        println(p_est_t0)
-        p_est_tspan = (p_est_t0, p_est_tf)
-
+        gd_time_arr = [p_est_t0, p_est_tf, com_step, save_step]
         # Figure out what the initial state of the vehicle is
         upcdp_0[1:10] = find_upc(spike_sol, c_step, s_step, p_est_t0)
         # Change the parameters to the estimated value
@@ -661,7 +663,6 @@ global p_stat = [m, l, lf, lr, Iz0, sample_fz, rho, cla, g]
 cs0 = 50000.0
 cs_lin = -0.0005
 cs_sine = 0.05
-# period = 90.0
 period = 360.0
 
 # Assemble p_update
@@ -685,24 +686,24 @@ spike_sol = solve(spike_prob,callback=cb, Tsit5(), dt = 0.01, adaptive=false, sa
 #plot path of car
 # plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", title="True Vehicle Trajectory",
 #     label="true", legend = :bottomright, xlims=(-200,430),ylims=(-150,270)) # (x, y)
-plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", title="True Vehicle Trajectory",
-    legend=false, xlims=(-200,430),ylims=(-150,270)) # (x, y)
+# plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", title="True Vehicle Trajectory",
+#     legend=false, xlims=(-200,430),ylims=(-150,270)) # (x, y)
 # savefig("Pest CS - True Trajectory.png")
-plot(spike_sol, vars=8, xlabel="t", ylabel="Cornering Stiffness", title="Evolution of Cornering Stiffness", legend=false) # Cornering stiffness.
-plot(spike_sol, vars=9, xlabel="t", ylabel="D", title="Parameter Estimation Input Acceleration", legend=false)
-plot(spike_sol, vars=10, xlabel="t", ylabel="delta", title="Parameter Estimation Input Steering", legend=false)
+# plot(spike_sol, vars=8, xlabel="t", ylabel="Cornering Stiffness", title="Evolution of Cornering Stiffness", legend=false) # Cornering stiffness.
+# plot(spike_sol, vars=9, xlabel="t", ylabel="D", title="Parameter Estimation Input Acceleration", legend=false)
+# plot(spike_sol, vars=10, xlabel="t", ylabel="delta", title="Parameter Estimation Input Steering", legend=false)
 
 # Generate data with static parameters
 u0_cb=[0.0,0.0,0.0,5.0,0.0,0.0,0.0,D0,delta0]
-p_cb = [m, l, lf, lr, Iz0, cs0, sample_fz, rho, cla0, g]
+p_cb = [m, l, lf, lr, Iz0, cs0, sample_fz, rho, cla, g]
 stat_dosetimes = 0.0:c_step:spike_tmax
 stat_affect!(integrator) = integrator.u[8:9] .= find_command(spike_sol, c_step, s_step, integrator.t)
 stat_cb = PresetTimeCallback(dosetimes,stat_affect!)
 stat_prob=ODEProblem(bicycle_model_callback!, u0_cb, (0.0,spike_tmax), p_cb)
 stat_sol = solve(stat_prob, callback=stat_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
 
-plot!(stat_sol, vars=(1,2),label="stat", title="True vs Stat XY Trajectory",
-    xlims=(-200,430),ylims=(-150,270)) # (x,y)
+# plot!(stat_sol, vars=(1,2),label="stat", title="True vs Stat XY Trajectory",
+#     xlims=(-200,430),ylims=(-150,270)) # (x,y)
 # savefig("Pest CS - True vs Stat trajectory.png")
 
 #=
@@ -848,3 +849,6 @@ for d in 1:length(stat_sol)
     global L2_stat = L2_stat + sum(stat_diff[d].^2)
 end
 println(L2_stat)
+
+
+#

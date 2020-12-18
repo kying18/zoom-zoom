@@ -3,6 +3,7 @@ cd(@__DIR__)
 include("generate_data.jl")
 using Plots
 using BenchmarkTools
+using Profile
 
 #=
 For parameter estimation, we want to look at the evolution of u over time, with
@@ -619,17 +620,6 @@ function gradient_descent_store(alpha, n_itr, data_sol, bounds, t_arr, upcdp0, p
         p_array[i+1]=p_next
         # Update the parameter values in the state vector
         upcdp[8:10] = p_array[i+1]
-
-        # if i == n_itr
-        #     plot(spike_sol, vars=1, title="X Trajectory: $index", xlabel="x", ylabel="t")
-        #     plot!(p_est_sol, vars=1)
-        #     savefig("X Trajectory: $index.png")
-        #
-        #     plot(spike_sol, vars=2, title="Y Trajectory: $index", xlabel="y", ylabel="t")
-        #     plot!(p_est_sol, vars=2)
-        #     savefig("y Trajectory: $index.png")
-        # end
-
     end
     return([C_array, p_array])
 end
@@ -683,7 +673,7 @@ function gradient_descent(alpha, n_itr, bounds, data_sol, time_arr, upcdp0, p_st
 end
 
 
-#= Gradient Descent
+# Gradient Descent
 # Generate parameter estimation data
 upc0 = [0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, Iz0, cs0, cla0, D0, delta0]
 dp_0 = zeros(18)
@@ -699,7 +689,7 @@ alpha_Iz = 0.005
 alpha_cs = 0.005
 alpha_cla = 0.0001
 gd_rate = [alpha_Iz, alpha_cs, alpha_cla]
-n_itr = 450
+n_itr = 500
 # test_C, test_p = gradient_descent_store(gd_rate, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat, 0)
 test_C, test_p = gradient_descent(gd_rate, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
 
@@ -719,7 +709,7 @@ plot(cla_vals, title="cla Evolution", xlabel="steps", ylabel="cla", legend=false
 =#
 
 #=
-Gradient Descent Profiling Analysis
+# Gradient Descent Profiling Analysis
 # benchmark
 @btime test_C, test_p = gradient_descent(gd_rate, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
 # Check types
@@ -741,7 +731,6 @@ end
 function est_param(alpha, n_itr, bounds, time_arr, data_sol, dynp_est0, p_stat)
     # Unpack the time array
     dt, tspan, t0, tf, com_step, save_step = time_arr
-    gd_time_arr = [t0, tf, com_step, save_step]
     # Create a time range
     t_range = t0:dt:tf-tspan
 
@@ -761,8 +750,7 @@ function est_param(alpha, n_itr, bounds, time_arr, data_sol, dynp_est0, p_stat)
         p_est_t0 = t_range[i]
         println(p_est_t0)
         p_est_tf = p_est_t0+tspan
-        p_est_tspan = (p_est_t0, p_est_tf)
-
+        gd_time_arr = [p_est_t0, p_est_tf, com_step, save_step]
         # Figure out what the initial state of the vehicle is
         upcdp_0[1:12] = find_upc(spike_sol, com_step, save_step, p_est_t0)
         # Change the parameters to the estimated value
@@ -819,8 +807,8 @@ delta0 = 0.01
 upc0 = [0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, Iz0, cs0, cla0, D0, delta0]
 spike_tmax = 100.0
 spike_tspan = (0.0,spike_tmax)
-global c_step = 0.5
-global s_step = 0.05
+c_step = 0.5
+s_step = 0.05
 dosetimes = 0.0:c_step:spike_tmax
 affect!(integrator) = integrator.u[11:12] .= next!(command_s)
 cb = PresetTimeCallback(dosetimes,affect!)
@@ -832,11 +820,11 @@ plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y",
     title="True Vehicle Trajectory", legend = false,
     xlims=(-200,430),ylims=(-150,250)) # (x, y)
 # savefig("Pest - True Trajectory.png")
-plot(spike_sol, vars=8, xlabel="t", ylabel="Iz", title="Evolution of Iz", legend=false) # Iz
-plot(spike_sol, vars=9, xlabel="t", ylabel="Cornering Stiffness", title="Evolution of Cornering Stiffness", legend=false) # Cornering stiffness
-plot(spike_sol, vars=10, xlabel="t", ylabel="Cla", title="Evolution of Cla", legend=false)
-plot(spike_sol, vars=11, xlabel="t", ylabel="D", title="Parameter Estimation Input Acceleration", legend=false)
-plot(spike_sol, vars=12, xlabel="t", ylabel="delta", title="Parameter Estimation Input Steering", legend=false)
+# plot(spike_sol, vars=8, xlabel="t", ylabel="Iz", title="Evolution of Iz", legend=false) # Iz
+# plot(spike_sol, vars=9, xlabel="t", ylabel="Cornering Stiffness", title="Evolution of Cornering Stiffness", legend=false) # Cornering stiffness
+# plot(spike_sol, vars=10, xlabel="t", ylabel="Cla", title="Evolution of Cla", legend=false)
+# plot(spike_sol, vars=11, xlabel="t", ylabel="D", title="Parameter Estimation Input Acceleration", legend=false)
+# plot(spike_sol, vars=12, xlabel="t", ylabel="delta", title="Parameter Estimation Input Steering", legend=false)
 
 # Generate data with static parameters
 u0_cb=[0.0,0.0,0.0,5.0,0.0,0.0,0.0,D0,delta0]
@@ -904,14 +892,14 @@ est_bounds = [p_lb, p_ub]
 dt = 1.0
 est_tspan = 1.0
 est_t0 = 0.0
-est_tf = 5.0
+est_tf = 100.0
 est_time_arr = [dt, est_tspan, est_t0, est_tf, c_step, s_step]
-t_plot = est_tspan/2:dt:est_tf-dt-est_tspan
+t_plot = est_tspan/2:dt:est_tf-est_tspan
 alpha_Iz = 0.005
 alpha_cs = 0.5
 alpha_cla = 0.0005
 gd_rate = [alpha_Iz, alpha_cs, alpha_cla]
-n_itr = 450
+n_itr = 1000
 estimated_params = est_param(gd_rate, n_itr, est_bounds, est_time_arr, spike_sol, dynp_est0, p_stat)
 
 #=
