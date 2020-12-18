@@ -76,45 +76,6 @@ png("neuralODE_train")
 PT=Float32[350.0,3.0,1.5,1.5,550.0,10000.0,3430.0,1.2,-0.5,9.8] #10
 P=PT./[100,1,1,1,100,10000,1000,1,1,1] # normalization
 
-# gpu stuff
-# Pkg.add("CUDA")
-using CUDA
-if has_cuda()
-    @info "CUDA is on"
-    CUDA.allowscalar(false)
-end
-
-#=
-Examples for gen_data
-=#
-# Set minimum and maximum values for initial state, parameters, and commands
-min_psi = 0.0   # Don't change
-max_psi = 2.0*pi # Don't change
-min_v = 0.0
-max_v = 30.0            # 30.0 m/s = 108 km/hr
-minmax_r = pi/128.0     # Min yaw rate (derivative of psi), pi/128 is about 3 deg
-minmax_steer = 0.26     # Don't change, from Driverless
-min_D = -20.0           # Driverless = [-20,15]
-max_D = 15.0
-minmax_delta = 30.0*pi/360.0 # Don't change. Max change in delta is 15 degrees,
-min_m = 200.0   # Driverless = 350.0
-max_m = 1000.0
-min_l = 2.5     # Driverless = 3.0
-max_l = 3.5
-min_lflr = 1.0  # Driverless = 1.5
-max_lflr = 2.0
-min_Iz = 550.0  # Driverless = 550.0
-max_Iz = 600.0
-min_cornering_stiff = 20000.0   # Driverless = [20,000,50,000]
-max_cornering_stiff = 50000.0
-min_cla = -0.7	# Driverless = 0.5
-max_cla = -0.3
-
-# [psi, vx, vy, r, steer, D, delta, m, l, lf/lr, Iz, cornering_stiff, cla]
-lb = [min_psi, min_v, min_v, -minmax_r, -minmax_steer, min_D, -minmax_delta, min_m, min_l, min_lflr, min_Iz, min_cornering_stiff, min_cla]
-ub = [max_psi, max_v, max_v, minmax_r, minmax_steer, max_D, minmax_delta, max_m, max_l, max_lflr, max_Iz, max_cornering_stiff, max_cla]
-
-
 function get_data_no_noise(num_data, lb, ub)
   data = gen_data(num_data, lb, ub)
   x = hcat(rand(num_data, 2), data[:,1:7])
@@ -127,7 +88,7 @@ function get_data_no_noise(num_data, lb, ub)
 end
 
 num_time_points = 20
-tspan = (0.0f0,5.0f0)
+tspan = (0.0f0,1.0f0)
 t = range(tspan[1],tspan[2],length=num_time_points)
 
 datasize = 20
@@ -154,11 +115,12 @@ for i=1:num_train
 end
 
 pl = scatter() # clears the plot
-reds=range(colorant"lightsalmon", stop=colorant"red4", length=num_train)
-blues=range(colorant"skyblue", stop=colorant"navy", length=num_train)
+reds=range(colorant"lightsalmon", stop=colorant"red3", length=3)
+blues=range(colorant"skyblue", stop=colorant"darkblue", length=3)
 # pred = Array(n_ode(U0[1:7])) # Get the prediction using the correct initial condition
 for i=1:num_train
-  scatter!(t,ode_data[1:3,(i-1)*num_time_points+1:i*num_time_points]',label="",color=blues[i])
+  # scatter!(t,ode_data[1:3,(i-1)*num_time_points+1:i*num_time_points]',label="",color=blues[i])
+  scatter!(t,ode_data[1:3,(i-1)*num_time_points+1:i*num_time_points]',label="",color=:blue)
   # scatter!(t,ode_data[1:3,i*num_time_points:(i+1)*num_time_points-1]')
 end
 scatter!()
@@ -185,10 +147,12 @@ cb = function () #callback function to observe training
     # plot current prediction against data
     # pl = scatter()
     for i=1:num_train
-      pl = scatter()
-      scatter!(t,ode_data[1:3,(i-1)*num_time_points+1:i*num_time_points]',label="",color=blues[i])
+      pl = scatter(title="True vs Predicted X, Y, Psi")
+      scatter!(t,ode_data[1:3,(i-1)*num_time_points+1:i*num_time_points]',label=["true x" "true y" "true psi"],color=blues',legend=:topleft)
       pred = Array(n_ode(xtrain[i, 1:7]))
-      scatter!(t,pred[1:3,:]',label="",color=reds[i])
+      scatter!(t,pred[1:3,:]',label=["pred x" "pred y" "pred psi"],color=reds',legend=:topleft)
+      xlabel!("Time (s)")
+      ylabel!("Value (m or rad)")
       display(plot(pl))
       savefig(pl, string("true_pred_", i))
     end
