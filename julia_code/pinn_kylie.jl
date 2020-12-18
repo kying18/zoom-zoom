@@ -20,6 +20,7 @@ using Flux
 
 include("./bicycle_model.jl")
 include("./generate_data.jl")
+include("./pack_race_data.jl")
 
 # 19 inputs for each input item in our x vector (7), u vector (2 - steer, D), p vector (10)
 # 7 outputs for each output item in the newly predicted y vector (ignoring theta)
@@ -143,16 +144,99 @@ end
 
 
 
-dp_num = 1000
-t_block = generate_training_data(dp_num)
 
-# best way to squish training block into something readable by Flux
-inp_train = [t_block[1][:,i] for i in 1:size(t_block[1],2)]
-outp_train = [t_block[3][:,i] for i in 1:size(t_block[3],2)]
-reg_block = [t_block[2][:,i] for i in 1:size(t_block[2],2)]
 
-train_dat = zip(inp_train,outp_train)
+########generate race data training block################
+u_raw = unpack_MATs()
 
+function generate_race_data(t_num,u_inp_len=9,u_out_len=7,p_len=10,dt=0.04)
+
+  u_raw = unpack_MATs()
+  foox = u_raw[1]
+  fooy = u_raw[2]
+
+  x_step = copy(u_raw)
+
+  checkerx = copy(foox)
+  checkery = copy(fooy)
+
+  u_train_inp = Vector{Array{Float64,1}}(undef,length(foox[:,2])-1)
+  u_train_out = Vector{Array{Float64,1}}(undef,length(foox[:,2])-1)
+
+
+  for i in 1:(length(foox[:,2])-1)
+    u_train_inp[i] = [u_raw[j][i,2] for j in 1:9]
+    u_train_out[i] = [u_raw[j][i+1,2] for j in 1:9]
+    u_train_out[i][1] = u_raw[1][i+1,2] -  u_raw[1][i,2]
+    u_train_out[i][2] = u_raw[2][i+1,2] -  u_raw[2][i,2]
+
+    u_train_inp[i][1] = 0
+    u_train_inp[i][2] = 0
+
+    deleteat!(u_train_inp[i], 1:2)
+
+
+  end
+  #(1)x, (2)y, (3)psi, (4)vx, (5)vy, (6)r, (7)steer, (8)D, (9) Delta
+  #                                                ^^comm(1), comm(2)
+  return zip(u_train_inp,u_train_out), u_train_inp, u_train_out
+end
+
+
+
+
+
+
+function generate_race_data_no_time(t_num,u_inp_len=9,u_out_len=7,p_len=10,dt=0.04)
+
+  u_raw = unpack_MATs_no_time()
+  foox = u_raw[1]
+  fooy = u_raw[2]
+
+  x_step = copy(u_raw)
+
+  checkerx = copy(foox)
+  checkery = copy(fooy)
+
+  start_t_batch = 1200
+  u_train_inp = Vector{Array{Float64,1}}(undef,length(foox)-1-start_t_batch)
+  u_train_out = Vector{Array{Float64,1}}(undef,length(foox)-1-start_t_batch)
+
+  for n in start_t_batch+1:(length(foox)-1)
+    i = n - start_t_batch
+    u_train_inp[i] = [u_raw[j][i] for j in 3:9]
+    u_train_out[i] = [u_raw[j][i+1] for j in 1:2]
+    u_train_out[i][1] = u_raw[1][i+1] -  u_raw[1][i]
+    u_train_out[i][2] = u_raw[2][i+1] -  u_raw[2][i]
+    #u_train_out[i][3] = u_raw[3][i+1] -  u_raw[3][i]
+
+  end
+
+
+  #u_train_input = u_train_inp./norm(u_train_inp)
+
+
+  #(1)x, (2)y, (3)psi, (4)vx, (5)vy, (6)r, (7)steer, (8)D, (9) Delta
+  #                                                ^^comm(1), comm(2)
+  return zip(u_train_inp,u_train_out), u_train_inp, u_train_out
+end
+
+
+
+####################################################
+
+
+
+
+
+
+
+
+
+######################## RACE DATA
+
+
+train_dat_race, ut_inp, ut_out =  generate_race_data_no_time(6000)
 
 
 
@@ -169,54 +253,137 @@ train_dat = zip(inp_train,outp_train)
 
 
 nn = Chain(
-    Dense(19, 133, relu),
-    Dense(133, 133, relu),
-    Dense(133, 7),
+    Dense(7, 14, tanh),
+    Dropout(0.00001),
+    Dense(14, 14, tanh),
+    Dropout(0.00001),
+    Dense(14, 2),
 )
 
 
 
-findall(seek->seek==inp_train[12],inp_train)
+
 
 ##################################
 
-lam = 0.8
+lam = 2
 dt = 0.01
 #loss_with_BM_reg(x, y) = Flux.Losses.mse(nn(x), y) + lam*Flux.Losses.mse(nn(x), bicycle_model(x[1:7], x[10:end], x[8:9]))
 #loss_with_BM_reg(x, y) = sum(abs2,nn(x) - y)
-loss_with_BM_only(x,y) = Flux.Losses.mse(nn(x), y) + lam*Flux.Losses.mse(nn(x), training_block[2][:,findall(seek->seek==x,inp_train)])
+#loss_with_BM_only(x,y) = Flux.Losses.mse(nn(x), y) + lam*Flux.Losses.mse(nn(x), training_block[2][:,findall(seek->seek==x,inp_train)])
 
-lr = 0.00001
+#loss_with_BM(x,y) = Flux.Losses.mse(nn(x)[3:end], y[3:end]) + lam*Flux.Losses.mse(nn(x)[1:2], y[1:2])
+loss_with_BMM(x,y) = Flux.Losses.mse(nn(x), y)
+
+
+lr = 0.0001
 opt = Flux.ADAM(lr)
 # data = Iterators.repeated((), 5000)
-
 
 
 # IMPORTANT: set a large enough batch size for the test data
 # Basically I do it by randomizing a batch pick from the training
 # set and just add up the total loss from that batch
-batch_size = 100
+batch_size = 1000
 iter = 0
 cb = function ()
   global iter += 1
-  if iter % 500 == 0
+  if iter % 200 == 0
     loss_counter = 0
     for iter in 1:batch_size
-      foo = rand(1:length(outp_train))
-      test_x = inp_train[foo]
-      test_y = outp_train[foo]
-      loss_counter += loss_with_BM_only(test_x,test_y)
+      foo = rand(1:length(ut_inp))
+      test_x = ut_inp[foo]
+      test_y = ut_out[foo]
+      loss_counter += loss_with_BMM(test_x,test_y)
     end
     display(loss_counter)
+
   end
 end
 
+testmode!(nn, false)
 using Flux: @epochs
-@epochs 50 Flux.train!(loss_with_BM_only, Flux.params(nn), train_dat, opt;
+@epochs 500 Flux.train!(loss_with_BMM, Flux.params(nn), train_dat_race, opt;
             cb=cb)
 
 ################################################################################
 ##################### let's try it out #########################################
+
+
+#tester_inp = copy(ut_inp)
+#tester_out = copy(ut_out)
+#x_traj = Vector{Float64}(undef,length(tester_inp))
+#y_traj = Vector{Float64}(undef,length(tester_inp))
+
+
+testmode!(nn, true)
+
+foo = rand(1:length(outp_train))
+test_x = ut_inp[foo]
+test_y = ut_out[foo]
+
+
+
+pp = generate_race_data_no_time(4000)
+
+
+####################################################
+x_coord = pp[3]
+nn_inp = pp[2]
+
+gq = zeros(length(x_coord))
+nn_q = zeros(length(x_coord))
+for i in 2:1:length(x_coord)
+  gq[i] = gq[i-1] + x_coord[i][1]
+  nn_q[i] = nn_q[i-1] + nn(nn_inp[i])[1]
+end
+
+y_coord = pp[3]
+nn_g = pp[2]
+
+gy = zeros(length(x_coord))
+nn_y = zeros(length(x_coord))
+for i in 2:1:length(x_coord)
+  gy[i] = gy[i-1] + y_coord[i][2]
+  nn_y[i] = nn_y[i-1] + nn(nn_g[i])[2]
+end
+
+plot(gq)
+plot!(nn_q)
+
+
+
+plot(gy)
+plot!(nn_y.-200)
+
+plot(gq[1:1000],gy[1:1000])
+plot!(nn_q[1:1000],nn_y[1:1000]-200)
+
+
+
+
+
+check = nn(test_x)
+
+for i in 1:length(x_traj)
+
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #from orig dataset:
 
