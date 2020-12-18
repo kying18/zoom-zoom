@@ -574,7 +574,7 @@ function gradient_descent(alpha, n_itr, data_sol, t0, tf, upcdp0, p_est, index)
         # Solve the ODE
         p_est_prob=ODEProblem(bicycle_model_est_p!, upcdp, p_est_tspan, p_est_calc)
         # p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
-        p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), saveat=s_step)
+        p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
         # Calculate the cost and the gradient for each new p
         C, dCdp = calc_dCdp(p_est_sol, spike_sol)
 
@@ -599,37 +599,13 @@ function gradient_descent(alpha, n_itr, data_sol, t0, tf, upcdp0, p_est, index)
     return(C, p_prev)
 end
 
-plot_gradient_descent(test_C, test_p, 0)
-
-function plot_gradient_descent(C_array, p_array, index)
-    plot(C_array,
-        title="Cost Gradient Descent Progression: $index",
-        xlabel="steps", ylabel="Cost",
-        yaxis=:log,
-        legend=false)
-    savefig("GD $index cost.png")
-
-    Iz_vals = [p_array[i][1] for i in 1:length(p_array)]
-    cs_vals = [p_array[i][2] for i in 1:length(p_array)]
-    cla_vals = [p_array[i][3] for i in 1:length(p_array)]
-    plot(Iz_vals, title="Iz Evolution: $index", xlabel="steps", ylabel="Iz", legend=false)
-    savefig("GD $index Iz.png")
-    plot(cs_vals, title="cs Evolution: $index", xlabel="steps", ylabel="cs", legend=false)
-    savefig("GD $index cs.png")
-    plot(cla_vals, title="cla Evolution: $index", xlabel="steps", ylabel="cla", legend=false)
-    savefig("GD $index cla.png")
-end
-
-plot(spike_sol, vars=1, xlabel="t", ylabel="x", title="Vehicle Trajectory") # (x, y)
-plot!(stat_sol, vars=1)
-plot!(p_est_sol, vars=1)
-
 # Find the commands used to generate the data with real parameters
 function find_upc(data_sol, c_step, save_step, t)
     i = Int( round(t/c_step)*(c_step/save_step+1) + 1 )
     return data_sol[1:12,i]
 end
 
+# A function to estimate the parameter evolution over time
 function est_param(alpha, n_itr, dt, tspan, t0, tf, data_sol, dynp_est0, p_est)
     # Create a time range
     t_range = t0:dt:tf-tspan
@@ -644,6 +620,7 @@ function est_param(alpha, n_itr, dt, tspan, t0, tf, data_sol, dynp_est0, p_est)
     for i in 1:length(t_range)-1
         # Figure out the initial and end time
         p_est_t0 = t_range[i]
+        println(p_est_t0)
         p_est_tf = p_est_t0+tspan
         p_est_tspan = (p_est_t0, p_est_tf)
 
@@ -653,15 +630,10 @@ function est_param(alpha, n_itr, dt, tspan, t0, tf, data_sol, dynp_est0, p_est)
         upcdp_0[8:10] = dyn_p_est
         # Start du/dp at 0
         upcdp_0[13:30] = zeros(18)
-        println(upcdp_0[8:10])
 
         # Perform gradient descent
         cost, p_estimated = gradient_descent(alpha, n_itr, data_sol, p_est_t0, p_est_tf, upcdp_0, p_est, i)
 
-        # Plot the gradient descent results
-        # plot_gradient_descent(cost_array, p_array, i)
-
-        println(cost)
         # Update the estimated parameters
         dyn_p_est = p_estimated
         # Save the estimated parameters
@@ -721,7 +693,7 @@ plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", title="True Vehicle Trajecto
 plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y",
     title="True Vehicle Trajectory", legend = false,
     xlims=(-200,430),ylims=(-150,250)) # (x, y)
-savefig("Pest - True Trajectory.png")
+# savefig("Pest - True Trajectory.png")
 plot(spike_sol, vars=8, xlabel="t", ylabel="Iz", title="Evolution of Iz", legend=false) # Iz
 plot(spike_sol, vars=9, xlabel="t", ylabel="Cornering Stiffness", title="Evolution of Cornering Stiffness", legend=false) # Cornering stiffness
 plot(spike_sol, vars=10, xlabel="t", ylabel="Cla", title="Evolution of Cla", legend=false)
@@ -738,8 +710,8 @@ stat_prob=ODEProblem(bicycle_model_callback!, u0_cb, (0.0,spike_tmax), p_cb)
 stat_sol = solve(stat_prob, callback=stat_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
 
 plot!(stat_sol, vars=(1,2),label="stat", title="True vs Stat XY Trajectory",
-    legend= :bottomright, xlims=(-200,430),ylims=(-150,250)) # (x,y)
-savefig("Pest - True vs Stat trajectory.png")
+    legend= :bottomright, xlims=(-200,430),ylims=(-150,300)) # (x,y)
+# savefig("Pest Slower - True vs Stat Trajectory.png")
 
 #=
 # Check to see if the gradients of the bicycle model wrt u and p are correct
@@ -786,8 +758,8 @@ p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=fal
 calc_dCdp(p_est_sol, spike_sol)
 =#
 
-#=
- # Gradient Descent
+
+#= Gradient Descent
 # Generate parameter estimation data
 upc0 = [0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, Iz0, cs0, cla0, D0, delta0]
 dp_0 = zeros(18)
@@ -797,15 +769,15 @@ dBM_du0[3,6] = 1.0
 dBM_dp0 = zeros((6,3))
 p_est = [p_stat, dBM_du0, dBM_dp0]
 global p_lb = [540.0, 19000.0, -0.55]
-global p_ub = [610.0, 51000.0, -0.45]
-p_est_tf = 2.5
+global p_ub = [610.0, 52000.0, -0.5]
+p_est_tf = 1.0
 alpha_Iz = 0.005
 alpha_cs = 0.005
 alpha_cla = 0.0001
 gd_rate = [alpha_Iz, alpha_cs, alpha_cla]
-n_itr = 1000
+n_itr = 450
 test_C, test_p = gradient_descent_store(gd_rate, n_itr, spike_sol, 0.0, p_est_tf, upcdp0, p_est, 0)
-# @btime test_C, test_p = gradient_descent_store(gd_rate, n_itr, spike_sol, 0.0, p_est_tf, upcdp0, p_est, 0)
+@btime test_C, test_p = gradient_descent(gd_rate, n_itr, spike_sol, 0.0, p_est_tf, upcdp0, p_est, 0)
 
 plot(test_C,
     title="Cost Gradient Descent Progression",
@@ -827,16 +799,16 @@ dBM_du0 = zeros((6,6))
 dBM_du0[3,6] = 1.0
 dBM_dp0 = zeros((6,3))
 p_est = [p_stat, dBM_du0, dBM_dp0]
-dt = 2.0
-est_tspan = 2.5
+dt = 1.0
+est_tspan = 1.0
 est_t0 = 0.0
 est_tf = 100.0
 t_plot = est_tspan/2:dt:est_tf-dt-est_tspan/2
-alpha_Iz = 0.001
-alpha_cs = 0.5
-alpha_cla = 0.0001
+alpha_Iz = 0.005
+alpha_cs = 5.0
+alpha_cla = 0.0005
 gd_rate = [alpha_Iz, alpha_cs, alpha_cla]
-n_itr = 1000
+n_itr = 450
 estimated_params = est_param(gd_rate, n_itr, dt, est_tspan, est_t0, est_tf, spike_sol, dynp_est0, p_est)
 
 estimated_Iz_vals = [estimated_params[i][1] for i in 1:length(estimated_params)]
@@ -845,27 +817,25 @@ estimated_cla_vals = [estimated_params[i][3] for i in 1:length(estimated_params)
 
 plot(spike_sol, vars=8, xlabel="t", ylabel="Iz", title="True vs Estimated Iz",
     label="true", legend= :outerright) # Iz
-plot!(t_plot, estimated_Iz_vals, label="est" )
+plot!(t_plot, estimated_Iz_vals, label="est", linecolor="orange")
 savefig("Pest Slower - True vs Estimated Iz.png")
 
 plot(spike_sol, vars=9, xlabel="t", ylabel="Cornering Stiffness",
     title="Evolution of Cornering Stiffness", label = "true") # Cornering stiffness
-plot!(t_plot, estimated_cs_vals, label="est" )
+plot!(t_plot, estimated_cs_vals, label="est", linecolor="orange")
 # savefig("Pest Slower - True vs Estimated cs.png")
 
 plot(spike_sol, vars=10, xlabel="t", ylabel="Cla", title="True vs Estimated Cla",
     label="true", legend= :outerright)
-plot!(t_plot, estimated_cla_vals, label="est" )
+plot!(t_plot, estimated_cla_vals, label="est", linecolor="orange")
 # savefig("Pest Slower - True vs Estimated cla.png")
 
 
 # See how the parameter estimation does
 plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", label = "true",
     legend = :bottomright)
-plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", label = "true",
-    legend = :bottomright, linecolor="orangered1")
-plot!(xlims=(-200,430),ylims=(-150,250), title="True Trajectory", legend=false)
-# savefig("true trajectory.png")
+plot!(xlims=(-200,430),ylims=(-150,300), title="True Trajectory", legend=false)
+# savefig("Pest Slower - True Trajectory.png")
 
 plot_est_dosetimes = est_t0:c_step:est_tf
 plot_est_affect!(integrator) = integrator.u[11:12] .= find_command(spike_sol, c_step, s_step, integrator.t)
@@ -889,12 +859,16 @@ for i in 1:length(t_range)-1
     # Change the parameters to the estimated value
     upcdp_est[8:10] = estimated_params[i]
     plot_est_prob=ODEProblem(bicycle_model_est_p!, upcdp_est, plot_est_tspan, plot_p_est)
-    plot_est_sol = solve(plot_est_prob, callback=plot_est_cb, Tsit5(), dt = 0.01, saveat=s_step)
-    plot!(plot_est_sol, vars=(1,2), linecolor="orange", label=false)
+    plot_est_sol = solve(plot_est_prob, callback=plot_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
+    if i != length(t_range)-1
+        plot!(plot_est_sol, vars=(1,2), linecolor="orange", label=false)
+    else
+        plot!(plot_est_sol, vars=(1,2), linecolor="orange", label="est")
+    end
 end
 
 plot!(title="Estimated XY Trajectory", legend=false,
-    xlims=(-200,430),ylims=(-150,250))
+    xlims=(-200,430),ylims=(-150,300))
 # savefig("Pest Slower - Estimated XY Trajectory.png")
 
 plot!(title="True vs Estimated XY Trajectory", legend=:bottomright,
