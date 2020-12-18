@@ -194,13 +194,13 @@ Optional args:
 function gen_data(N_data, lb, ub; dt = 0.001, add_noise=false,
     percent_noise=0.01, add_unacc=false, unacc_p=Vector{Float64}[])
     # Set up Sobol sequence generator to vary the following states, commands,
-    # and parameters.
+    # and eters.
 
     s = SobolSeq(lb, ub)
     # Skip the inital portion of the LDS
     skip(s, N_data)
 
-    # Set the fixed parameter values
+    # Set the fixed eter values
     rho = 1.2    # air density
     g = 9.8      # gravity
 
@@ -334,9 +334,6 @@ callback_sol = solve(callback_prob,callback=cb, saveat=0.05)
 plot(callback_sol, vars=(1,2), xlabel="x", ylabel="y", title="Vehicle Trajectory") # (x, y)
 =#
 
-#=
-Generate randomly initialized time series data
-=#
 # Set up Sobol Sequence generators
 global init_lb = [min_psi, min_v, min_v, -minmax_r, -minmax_steer, min_m, min_l, min_lflr, min_Iz, min_cornering_stiff, min_cla]
 global init_ub = [max_psi, max_v, max_v, minmax_r, minmax_steer, max_m, max_l, max_lflr, max_Iz, max_cornering_stiff, max_cla]
@@ -346,7 +343,8 @@ minmax_delta = 30.0*pi/360.0 # max change in delta is 15 degrees
 global command_lb = [min_D, -minmax_delta] # Change value above to change bounds
 global command_ub = [max_D, minmax_delta]
 
-function gen_rand_time_data(tspan)
+function gen_rand_time_data_mod(interval)
+    tspan=(interval[1],interval[end])
     # Define static parameters
     rho = 1.2
     g = 9.8
@@ -366,17 +364,13 @@ function gen_rand_time_data(tspan)
     cla = init_x[11]
     p = [m, l, lflr, lflr, Iz, cornering_stiff, sample_fz, rho, cla, g]
     # When commands are applied
-    dosetimes = tspan[1]:0.5:tspan[2]
+    #save_command=zeros(2,length(collect(interval)))
     affect!(integrator) = integrator.u[8:9] .= next!(command_s)
-    rand_cb = PresetTimeCallback(dosetimes,affect!)
+
+
+    rand_cb = PresetTimeCallback(interval,affect!)
     rand_prob=ODEProblem(bicycle_model_callback!, u, tspan, p)
-    rand_sol = solve(rand_prob,callback=rand_cb, saveat=0.05)
+    rand_sol = Array(solve(rand_prob,callback=rand_cb, saveat=t))[:,1:2:end]
+    p=p./[100, 1, 1, 1, 100, 10000, 1000, 1, 1, 1]
     return [p, rand_sol]
 end
-
-#= Example
-=#
-t_span_ex = (0,10.0)
-p_used, ex_sol = gen_rand_time_data(t_span_ex)
-# p = [m, l, lf, lr, Iz, cornering_stiff, sample_fz, rho, cla, g]
-# u of ex_sol is [x, y, psi, vx, vy, r, steer, D, delta]
