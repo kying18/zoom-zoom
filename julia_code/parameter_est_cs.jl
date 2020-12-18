@@ -736,10 +736,10 @@ n_itr = 500
 estimated_params = est_param(alpha_cs, n_itr, dt, est_tspan, est_t0, est_tf, spike_sol, dynp_est0, p_est)
 
 plot(spike_sol, vars=8, xlabel="t", ylabel="Cornering Stiffness",
-    title="Evolution of Cornering Stiffness", label = "true") # Cornering stiffness
+    title="True vs Estimated Cornering Stiffness, alpha= $alpha_cs", label = "true") # Cornering stiffness
 plot!(t_plot, estimated_params, label="est", legend= :topleft,
-    linecolor="orange")
-savefig("Pest CS - True vs Estimated cs.png")
+    linecolor="red")
+savefig("Pest CS - True vs Estimated cs, alpha= $alpha_cs.png")
 
 
 # See how the parameter estimation does
@@ -753,14 +753,11 @@ t_range = est_t0:dt:est_tf-est_tspan
 upcdp_est = zeros(30)
 plot_p_est = [p_stat, dBM_du0, dBM_dp0]
 # plot([], xlabel="x", ylabel="y", title="Estimated XY Trajectory", legend=false)
+L2_est = 0.0
 for i in 1:length(t_range)-1
     # Figure out the initial and end time
     plot_est_t0 = t_range[i]
-    if i != length(t_range)-1
-        plot_est_tf = plot_est_t0 + est_tspan
-    else
-        plot_est_tf = plot_est_t0 + 2.0* est_tspan
-    end
+    plot_est_tf = plot_est_t0 + est_tspan
     plot_est_tspan = (plot_est_t0, plot_est_tf)
     # Figure out what upcdp is
     upcdp_est[1:10] = find_upc(spike_sol, c_step, s_step, plot_est_t0)
@@ -770,14 +767,33 @@ for i in 1:length(t_range)-1
     # Solve the ODE problem
     plot_est_prob=ODEProblem(bicycle_model_est_p!, upcdp_est, plot_est_tspan, plot_p_est)
     plot_est_sol = solve(plot_est_prob, callback=plot_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
+
+    # Calculate the total L2 loss
+    j = Int( round(plot_est_t0/c_step)*(c_step/s_step+1) + 1 )
+    diff = plot_est_sol[1:2,:]-spike_sol[1:2,j:j+length(plot_est_sol)-1]
+    for d in 1:length(plot_est_sol)
+        global L2_est = L2_est + sum(diff[d].^2)
+    end
+
+    # Plot
     if i != length(t_range)-1
-        plot!(plot_est_sol, vars=(1,2), linecolor="orange", label=false)
+        plot!(plot_est_sol, vars=(1,2), linecolor="red", label=false)
     else
-        plot!(plot_est_sol, vars=(1,2), linecolor="orange", label="est")
+        plot!(plot_est_sol, vars=(1,2), linecolor="red", label="est")
     end
 end
 
-plot!(title="Estimated XY Trajectory, alpha= $alpha_cs", xlims=(-200,430),ylims=(-150,250))
+L2_est
+println(L2_est)
+
+L2_stat = 0.0
+stat_diff = stat_sol[1:2,:]-spike_sol[1:2,:]
+for d in 1:length(stat_sol)
+    global L2_stat = L2_stat + sum(stat_diff[d].^2)
+end
+println(L2_stat)
+
+# plot!(title="Estimated XY Trajectory", xlims=(-200,430),ylims=(-150,250))
 # savefig("Estimated XY Trajectory.png")
 
 plot!(title="True vs Estimated XY Trajectory",
@@ -785,6 +801,6 @@ plot!(title="True vs Estimated XY Trajectory",
 savefig("Pest CS - True vs Estimated XY Trajectory.png")
 
 plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", label="true", legend=:bottomright)
-plot!(stat_sol, vars=(1,2),label="stat", title="True vs Stat XY Trajectory",
+plot!(stat_sol, vars=(1,2),label="static", title="True vs Static XY Trajectory",
     xlims=(-200,430),ylims=(-150,270))
 savefig("Pest CS - True vs Static XY Trajectory.png")

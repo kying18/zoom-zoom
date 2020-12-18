@@ -709,8 +709,8 @@ stat_cb = PresetTimeCallback(dosetimes,stat_affect!)
 stat_prob=ODEProblem(bicycle_model_callback!, u0_cb, (0.0,spike_tmax), p_cb)
 stat_sol = solve(stat_prob, callback=stat_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
 
-plot!(stat_sol, vars=(1,2),label="stat", title="True vs Stat XY Trajectory",
-    legend= :bottomright, xlims=(-200,430),ylims=(-150,300)) # (x,y)
+plot!(stat_sol, vars=(1,2),label="static", title="True vs Static XY Trajectory",
+    legend= :bottomright, xlims=(-200,430),ylims=(-150,250)) # (x,y)
 # savefig("Pest Slower - True vs Stat Trajectory.png")
 
 #=
@@ -799,13 +799,15 @@ dBM_du0 = zeros((6,6))
 dBM_du0[3,6] = 1.0
 dBM_dp0 = zeros((6,3))
 p_est = [p_stat, dBM_du0, dBM_dp0]
+global p_lb = [540.0, 19000.0, -0.55]
+global p_ub = [610.0, 52000.0, -0.5]
 dt = 1.0
 est_tspan = 1.0
 est_t0 = 0.0
 est_tf = 100.0
 t_plot = est_tspan/2:dt:est_tf-dt-est_tspan/2
 alpha_Iz = 0.005
-alpha_cs = 5.0
+alpha_cs = 0.5
 alpha_cla = 0.0005
 gd_rate = [alpha_Iz, alpha_cs, alpha_cla]
 n_itr = 450
@@ -816,19 +818,20 @@ estimated_cs_vals = [estimated_params[i][2] for i in 1:length(estimated_params)]
 estimated_cla_vals = [estimated_params[i][3] for i in 1:length(estimated_params)]
 
 plot(spike_sol, vars=8, xlabel="t", ylabel="Iz", title="True vs Estimated Iz",
-    label="true", legend= :outerright) # Iz
-plot!(t_plot, estimated_Iz_vals, label="est", linecolor="orange")
+    label="true", legend= :topleft) # Iz
+plot!(t_plot, estimated_Iz_vals, label="est", linecolor="red")
 savefig("Pest Slower - True vs Estimated Iz.png")
 
 plot(spike_sol, vars=9, xlabel="t", ylabel="Cornering Stiffness",
-    title="Evolution of Cornering Stiffness", label = "true") # Cornering stiffness
-plot!(t_plot, estimated_cs_vals, label="est", linecolor="orange")
-# savefig("Pest Slower - True vs Estimated cs.png")
+    title="True vs Estimated Cornering Stiffness", label = "true",
+    legend = :topleft) # Cornering stiffness
+plot!(t_plot, estimated_cs_vals, label="est", linecolor="red")
+savefig("Pest Slower - True vs Estimated cs.png")
 
 plot(spike_sol, vars=10, xlabel="t", ylabel="Cla", title="True vs Estimated Cla",
     label="true", legend= :outerright)
-plot!(t_plot, estimated_cla_vals, label="est", linecolor="orange")
-# savefig("Pest Slower - True vs Estimated cla.png")
+plot!(t_plot, estimated_cla_vals, label="est", linecolor="red")
+savefig("Pest Slower - True vs Estimated cla.png")
 
 
 # See how the parameter estimation does
@@ -844,14 +847,11 @@ t_range = est_t0:dt:est_tf-est_tspan
 upcdp_est = zeros(30)
 plot_p_est = [p_stat, dBM_du0, dBM_dp0]
 plot([], xlabel="x", ylabel="y", title="Estimated XY Trajectory", legend=false)
+L2_est = 0.0
 for i in 1:length(t_range)-1
     # Figure out the initial and end time
     plot_est_t0 = t_range[i]
-    if i != length(t_range)-1
-        plot_est_tf = plot_est_t0 + est_tspan
-    else
-        plot_est_tf = plot_est_t0 + 2.0* est_tspan
-    end
+    plot_est_tf = plot_est_t0 + est_tspan
 
     plot_est_tspan = (plot_est_t0, plot_est_tf)
     # Figure out what upcdp
@@ -860,15 +860,34 @@ for i in 1:length(t_range)-1
     upcdp_est[8:10] = estimated_params[i]
     plot_est_prob=ODEProblem(bicycle_model_est_p!, upcdp_est, plot_est_tspan, plot_p_est)
     plot_est_sol = solve(plot_est_prob, callback=plot_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
+
+    # Calculate the total L2 loss
+    j = Int( round(plot_est_t0/c_step)*(c_step/s_step+1) + 1 )
+    diff = plot_est_sol[1:2,:]-spike_sol[1:2,j:j+length(plot_est_sol)-1]
+    for d in 1:length(plot_est_sol)
+        global L2_est = L2_est + sum(diff[d].^2)
+    end
+
+    # Plot
     if i != length(t_range)-1
-        plot!(plot_est_sol, vars=(1,2), linecolor="orange", label=false)
+        plot!(plot_est_sol, vars=(1,2), linecolor="red", label=false)
     else
-        plot!(plot_est_sol, vars=(1,2), linecolor="orange", label="est")
+        plot!(plot_est_sol, vars=(1,2), linecolor="red", label="est")
     end
 end
 
-plot!(title="Estimated XY Trajectory", legend=false,
-    xlims=(-200,430),ylims=(-150,300))
+L2_est
+println(L2_est)
+
+L2_stat = 0.0
+stat_diff = stat_sol[1:2,:]-spike_sol[1:2,:]
+for d in 1:length(stat_sol)
+    global L2_stat = L2_stat + sum(stat_diff[d].^2)
+end
+println(L2_stat)
+
+# plot!(title="Estimated XY Trajectory", legend=false,
+    # xlims=(-200,430),ylims=(-150,250))
 # savefig("Pest Slower - Estimated XY Trajectory.png")
 
 plot!(title="True vs Estimated XY Trajectory", legend=:bottomright,
