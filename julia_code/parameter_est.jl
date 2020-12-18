@@ -76,14 +76,23 @@ function update_Iz(Iz0, Iz_max, Iz_rate, t)
         Iz = Iz0 + (Iz_max-Iz0)*(1.0/(1+Base.MathConstants.ℯ^(-t*Iz_rate))-0.5)
 end
 
-test_tspan = range(0, 450.0, length = 901)
+
+#= Check to see if there's any type inference issues with update_Iz
+test_Iz0 = 550.0
+test_Iz_max = 600.0
+test_Iz_rate = 0.01
+test_t = 0.0
+@code_warntype update_Iz(test_Iz0, test_Iz_max, test_Iz_rate, test_t)
+=#
+
+#= Plot a test trajectory of Iz
 plot(test_tspan,
     update_Iz.(550.0, 600.0, 0.01, test_tspan),
     title = "Evolution of Iz Over 5 Periods",
     xlabel = "t",
     ylabel = "Iz",
     legend = false)
-
+=#
 
 """
     function update_cornering_stiff(cs0, cs_lin, period, t)
@@ -104,6 +113,17 @@ function update_cornering_stiff(cs0, cs_lin, cs_sine, period, t)
     cornering_stiff = cs0 *(1.0 + cs_sine*sin(2.0*pi*t/period) + cs_lin * t)
 end
 
+#=
+#Check to see if there's any type inference issues with update_Iz
+test_cs0 = 50000.0
+test_cs_lin = -0.0005
+test_cs_sine = 0.05
+test_period = 90.0
+test_t = 0.0
+@code_warntype update_cornering_stiff(test_cs0, test_cs_lin, test_cs_sine, test_period, test_t)
+=#
+
+#= Plot a test trajectory of cornering stiffness
 test_tspan = range(0, 450.0, length = 901)
 plot(test_tspan,
     update_cornering_stiff.(50000.0, -0.0005, 0.05, 90, test_tspan),
@@ -111,6 +131,7 @@ plot(test_tspan,
     xlabel = "t",
     ylabel = "Cornering Stiffness",
     legend = false)
+=#
 
 """
     update_cla(d_cla, period, t)
@@ -125,13 +146,24 @@ function update_cla(d_cla, period, t)
     cla = d_cla*sin(2.0*pi*t/period) - 0.5
 end
 
+#=
+#Check to see if there's any type inference issues with update_Iz
+test_d_cla = -0.2
+test_period = 90.0
+test_t = 0.0
+@code_warntype update_cla(test_d_cla, test_period, test_t)
+=#
+
+#= Plot a test trajectory of cla
 test_tspan = range(0, 90.0, length = 181)
 plot(test_tspan,
     update_cla.(-0.05, 90.0, test_tspan),
     title = "Evolution of Cla Over 1 Period",
     xlabel = "t",
     ylabel = "Cla")
+=#
 
+# A function to update all the parameters over time
 function update_p(p_update, t)
     new_p = Vector{Float64}(undef,3)
     Iz0, Iz_max, Iz_rate, cs0, cs_lin, cs_sine, period, d_cla = p_update
@@ -141,24 +173,47 @@ function update_p(p_update, t)
     return new_p
 end
 
+#=
+# Check update_p
+test_p_update = [test_Iz0, test_Iz_max, test_Iz_rate, test_cs0, test_cs_lin, test_cs_sine, test_period, test_d_cla]
+test_t = 0.0
+@code_warntype update_p(test_p_update, test_t)
+=#
+
 # Find the commands used to generate the data with real parameters
-function find_command(data_sol, c_step, save_step, t)
-    i = Int( round(t/c_step)*(c_step/save_step+1) + 1 )
+function find_command(data_sol, c_step, s_step, t)
+    i = Int( round(t/c_step)*(c_step/s_step+1) + 1 )
     return data_sol[11:12,i]
 end
+
+#=
+# Check find_command
+@code_warntype find_command(spike_sol, c_step, s_step, 0.0)
+=#
 
 #=
 Parameter estimation df/dp calculations
 =#
 function calc_dFyfr_dcla(vx, cornering_stiff, alphafr, l, lfr, sample_Fz, rho)
-    dFyfr_dcla = 0.5 * alphafr * cornering_stiff * lf * rho * vx^2.0 / (sample_Fz * l)
+    dFyfr_dcla = 0.5 * alphafr * cornering_stiff * lfr * rho * vx^2.0 / (sample_Fz * l)
     return dFyfr_dcla
 end
+
+#=
+# Check calc_dFyfr_dcla
+@code_warntype calc_dFyfr_dcla(5.0, cs0, 0.0, l, lf, sample_fz, rho)
+=#
 
 function calc_dFyfr_dcs(alphafr, Fzfr, sample_Fz)
     dFyfr_dcs = -alphafr * Fzfr / sample_Fz
     return dFyfr_dcs
 end
+
+#=
+# Check calc_dFyfr_dcs
+@code_warntype calc_dFyfr_dcs(0.0, 10.0, sample_fz)
+=#
+
 
 #=
 Parameter estimation df/du calculations
@@ -167,9 +222,19 @@ function calc_dalphafr_dvy(vx, vy, r, lfr)
     dalphafr_dvy = vx / ( (vy + r*lfr)^2.0 +vx^2.0 )
 end
 
+#=
+# Check calc_dalphafr_dvy
+@code_warntype calc_dalphafr_dvy(4.0, 5.0, 1.0, lf)
+=#
+
 function calc_dalphafr_dvx(vx, vy, r, lfr)
     dalphafr_dvx = -(r*lfr + vy) / ( (vy + r*lfr)^2.0 +vx^2.0 )
 end
+
+#=
+# Check calc_dalphafr_dvx
+@code_warntype calc_dalphafr_dvx(4.0, 5.0, 1.0, lf)
+=#
 
 # Check to make sure the derivatives are calculated correctly
 function bicycle_model_est_p_Jacobian(udpc)
@@ -226,13 +291,14 @@ function bicycle_model_est_p_Jacobian(udpc)
 
 end
 
-function bicycle_model_est_p!(dupcdp, upcdp, p_est_p, t)
+function bicycle_model_est_p!(dupcdp, upcdp, p_stat, t)
     # static params of the car
-    m, l, lf, lr, sample_fz, rho, g = p_est_p[1]
+    m, l, lf, lr, sample_fz, rho, g = p_stat
 
-    # Unpack derivatives
-    dBM_du = p_est_p[2]
-    dBM_dp = p_est_p[3]
+    # Initialize an array for the derivatives
+    dBM_du = zeros((6,6))
+    dBM_du[3,6] = 1.0
+    dBM_dp = zeros((6,3))
 
     # unpack variables
     # states
@@ -393,6 +459,19 @@ function bicycle_model_est_p!(dupcdp, upcdp, p_est_p, t)
 
 end
 
+
+#=
+# Check bicycle_model_est_p!
+test_upc = [0.0,0.0,5.0,0.0,0.0,0.0,0.0, Iz0, cs0, cla0, D0, delta0]
+test_dp = zeros(18)
+test_upcdp = vcat(test_upc, test_dp)
+test_dupcdp = zeros(30)
+test_t = 0.0
+test_pstat = [m, l, lf, lr, sample_fz, rho, g]
+@code_warntype bicycle_model_est_p!(test_dupcdp, test_upcdp, test_pstat, test_t)
+=#
+
+
 # A function to calculate the gradient of the cost
 function calc_dCdp(p_est_sol, data_sol)
     # u_diff = p_est_sol[1:7,:]-data_sol[1:7,1:length(p_est_sol)]
@@ -406,9 +485,13 @@ function calc_dCdp(p_est_sol, data_sol)
         dCdp = dCdp + transpose(reshape(p_est_sol[13:30,i],(6,3)))*u_diff[:,i]
     end
     dCdp = dCdp*2.0
-    [C, dCdp]
+    return C, dCdp
 end
 
+#=
+# Check bicycle_model_est_p!
+@code_warntype calc_dCdp(stat_sol, spike_sol)
+=#
 
 """
 A function to calculate the cost of the bicycle model vs the "real data" for use
@@ -494,31 +577,31 @@ function bicycle_model_est_Jacobian!(dupcdp, upcdp, p_stat, t)
 end
 
 
-function gradient_descent_store(alpha, n_itr, data_sol, t0, tf, upcdp0, p_est, index)
+function gradient_descent_store(alpha, n_itr, data_sol, bounds, t_arr, upcdp0, p_stat)
     # Create an array to store the parameters
     p_array = Vector{Array{Float64,1}}(undef,n_itr+1)
     # Create an array to store the costs
     C_array = Vector{Float64}(undef,n_itr)
     # Create an array to work with
     upcdp = copy(upcdp0)
-    # Copy p_est
-    p_est_calc = copy(p_est)
+    # Unpack the time array
+    t0, tf, com_step, save_step = time_arr
+
+    # Unpack the bounds
+    p_lb = bounds[1]
+    u_lb = bounds[2]
 
     # Store the initial guess for p
     p_array[1] = upcdp0[8:10]
     p_est_tspan = (t0,tf)
-    p_est_dosetimes = t0:c_step:tf
-    p_est_affect!(integrator) = integrator.u[11:12] .= find_command(data_sol, c_step, s_step, integrator.t)
+    p_est_dosetimes = t0:com_step:tf
+    p_est_affect!(integrator) = integrator.u[11:12] .= find_command(data_sol, com_step, save_step, integrator.t)
     p_est_cb = PresetTimeCallback(p_est_dosetimes, p_est_affect!)
 
     for i in 1:n_itr
-        # Create copies of the gradients to work with
-        p_est_calc[2] = copy(p_est[2])
-        p_est_calc[3] = copy(p_est[3])
-
         # Solve the ODE
-        p_est_prob=ODEProblem(bicycle_model_est_p!, upcdp, p_est_tspan, p_est_calc)
-        p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
+        p_est_prob=ODEProblem(bicycle_model_est_p!, upcdp, p_est_tspan, p_stat)
+        p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=save_step)
         # Calculate the cost and the gradient for each new p
         C, dCdp = calc_dCdp(p_est_sol, spike_sol)
         # Store the calculated cost
@@ -551,30 +634,30 @@ function gradient_descent_store(alpha, n_itr, data_sol, t0, tf, upcdp0, p_est, i
     return([C_array, p_array])
 end
 
-function gradient_descent(alpha, n_itr, data_sol, t0, tf, upcdp0, p_est, index)
+function gradient_descent(alpha, n_itr, bounds, data_sol, time_arr, upcdp0, p_stat)
     # Create an array to store the parameters
     p_prev = upcdp0[8:10]
     # Create an array to store the costs
     C = 0.0
     # Create an array to work with
     upcdp = copy(upcdp0)
-    # Copy p_est
-    p_est_calc = copy(p_est)
 
+    # Unpack the bounds
+    p_lb = bounds[1]
+    u_lb = bounds[2]
+
+    # Unpack the time array
+    t0, tf, com_step, save_step = time_arr
     p_est_tspan = (t0,tf)
-    p_est_dosetimes = t0:c_step:tf
-    p_est_affect!(integrator) = integrator.u[11:12] .= find_command(data_sol, c_step, s_step, integrator.t)
+    p_est_dosetimes = t0:com_step:tf
+    p_est_affect!(integrator) = integrator.u[11:12] .= find_command(data_sol, com_step, save_step, integrator.t)
     p_est_cb = PresetTimeCallback(p_est_dosetimes, p_est_affect!)
 
     for i in 1:n_itr
-        # Create copies of the gradients to work with
-        p_est_calc[2] = copy(p_est[2])
-        p_est_calc[3] = copy(p_est[3])
-
         # Solve the ODE
-        p_est_prob=ODEProblem(bicycle_model_est_p!, upcdp, p_est_tspan, p_est_calc)
+        p_est_prob = ODEProblem(bicycle_model_est_p!, upcdp, p_est_tspan, p_stat)
         # p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
-        p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=s_step)
+        p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=false, saveat=save_step)
         # Calculate the cost and the gradient for each new p
         C, dCdp = calc_dCdp(p_est_sol, spike_sol)
 
@@ -599,22 +682,78 @@ function gradient_descent(alpha, n_itr, data_sol, t0, tf, upcdp0, p_est, index)
     return(C, p_prev)
 end
 
+
+#= Gradient Descent
+# Generate parameter estimation data
+upc0 = [0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, Iz0, cs0, cla0, D0, delta0]
+dp_0 = zeros(18)
+upcdp0 = vcat(upc0, dp_0)
+
+p_lb = [540.0, 19000.0, -0.55]
+p_ub = [610.0, 52000.0, -0.5]
+est_bounds = [p_lb, p_ub]
+
+p_est_tf = 1.0
+time_array = [0.0, p_est_tf, c_step, s_step]
+alpha_Iz = 0.005
+alpha_cs = 0.005
+alpha_cla = 0.0001
+gd_rate = [alpha_Iz, alpha_cs, alpha_cla]
+n_itr = 450
+# test_C, test_p = gradient_descent_store(gd_rate, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat, 0)
+test_C, test_p = gradient_descent(gd_rate, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
+
+
+plot(test_C,
+   title="Cost Gradient Descent Progression",
+   xlabel="steps", ylabel="Cost",
+   yaxis=:log,
+   legend=false)
+
+Iz_vals = [test_p[i][1] for i in 1:length(test_p)]
+cs_vals = [test_p[i][2] for i in 1:length(test_p)]
+cla_vals = [test_p[i][3] for i in 1:length(test_p)]
+plot(Iz_vals, title="Iz Evolution", xlabel="steps", ylabel="Iz", legend=false)
+plot(cs_vals, title="cs Evolution", xlabel="steps", ylabel="cs", legend=false)
+plot(cla_vals, title="cla Evolution", xlabel="steps", ylabel="cla", legend=false)
+=#
+
+#=
+Gradient Descent Profiling Analysis
+# benchmark
+@btime test_C, test_p = gradient_descent(gd_rate, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
+# Check types
+@code_warntype gradient_descent(gd_rate, n_itr, est_bounds, spike_sol, time_array, upcdp0, p_stat)
+=#
+
 # Find the commands used to generate the data with real parameters
-function find_upc(data_sol, c_step, save_step, t)
-    i = Int( round(t/c_step)*(c_step/save_step+1) + 1 )
+function find_upc(data_sol, c_step, s_step, t)
+    i = Int( round(t/c_step)*(c_step/s_step+1) + 1 )
     return data_sol[1:12,i]
 end
 
+#=
+# Check find_command for type stability
+@code_warntype find_upc(spike_sol, c_step, s_step, 0.0)
+=#
+
 # A function to estimate the parameter evolution over time
-function est_param(alpha, n_itr, dt, tspan, t0, tf, data_sol, dynp_est0, p_est)
+function est_param(alpha, n_itr, bounds, time_arr, data_sol, dynp_est0, p_stat)
+    # Unpack the time array
+    dt, tspan, t0, tf, com_step, save_step = time_arr
+    gd_time_arr = [t0, tf, com_step, save_step]
     # Create a time range
     t_range = t0:dt:tf-tspan
+
+    # Unpack the bounds
+    p_lb = bounds[1]
+    p_ub = bounds[2]
 
     # Create an array to store the estimated parameters in
     est_p_array = Vector{Array{Float64,1}}(undef, length(t_range)-1)
     dyn_p_est = dynp_est0
 
-    # Initialize a v
+    # Initialize a vector for upcdp
     upcdp_0 = zeros(30)
 
     for i in 1:length(t_range)-1
@@ -625,15 +764,14 @@ function est_param(alpha, n_itr, dt, tspan, t0, tf, data_sol, dynp_est0, p_est)
         p_est_tspan = (p_est_t0, p_est_tf)
 
         # Figure out what the initial state of the vehicle is
-        upcdp_0[1:12] = find_upc(spike_sol, c_step, s_step, p_est_t0)
+        upcdp_0[1:12] = find_upc(spike_sol, com_step, save_step, p_est_t0)
         # Change the parameters to the estimated value
         upcdp_0[8:10] = dyn_p_est
         # Start du/dp at 0
         upcdp_0[13:30] = zeros(18)
 
         # Perform gradient descent
-        cost, p_estimated = gradient_descent(alpha, n_itr, data_sol, p_est_t0, p_est_tf, upcdp_0, p_est, i)
-
+        cost, p_estimated = gradient_descent(alpha, n_itr, bounds, data_sol, gd_time_arr, upcdp_0, p_stat)
         # Update the estimated parameters
         dyn_p_est = p_estimated
         # Save the estimated parameters
@@ -758,95 +896,71 @@ p_est_sol = solve(p_est_prob,callback=p_est_cb, Tsit5(), dt = 0.01, adaptive=fal
 calc_dCdp(p_est_sol, spike_sol)
 =#
 
-
-#= Gradient Descent
-# Generate parameter estimation data
-upc0 = [0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, Iz0, cs0, cla0, D0, delta0]
-dp_0 = zeros(18)
-upcdp0 = vcat(upc0, dp_0)
-dBM_du0 = zeros((6,6))
-dBM_du0[3,6] = 1.0
-dBM_dp0 = zeros((6,3))
-p_est = [p_stat, dBM_du0, dBM_dp0]
-global p_lb = [540.0, 19000.0, -0.55]
-global p_ub = [610.0, 52000.0, -0.5]
-p_est_tf = 1.0
-alpha_Iz = 0.005
-alpha_cs = 0.005
-alpha_cla = 0.0001
-gd_rate = [alpha_Iz, alpha_cs, alpha_cla]
-n_itr = 450
-test_C, test_p = gradient_descent_store(gd_rate, n_itr, spike_sol, 0.0, p_est_tf, upcdp0, p_est, 0)
-@btime test_C, test_p = gradient_descent(gd_rate, n_itr, spike_sol, 0.0, p_est_tf, upcdp0, p_est, 0)
-
-plot(test_C,
-    title="Cost Gradient Descent Progression",
-    xlabel="steps", ylabel="Cost",
-    yaxis=:log,
-    legend=false)
-
-Iz_vals = [test_p[i][1] for i in 1:length(test_p)]
-cs_vals = [test_p[i][2] for i in 1:length(test_p)]
-cla_vals = [test_p[i][3] for i in 1:length(test_p)]
-plot(Iz_vals, title="Iz Evolution", xlabel="steps", ylabel="Iz", legend=false)
-plot(cs_vals, title="cs Evolution", xlabel="steps", ylabel="cs", legend=false)
-plot(cla_vals, title="cla Evolution", xlabel="steps", ylabel="cla", legend=false)
-
-
-=#
+# Estimate parameters
 dynp_est0 = [Iz0, cs0, cla0]
-dBM_du0 = zeros((6,6))
-dBM_du0[3,6] = 1.0
-dBM_dp0 = zeros((6,3))
-p_est = [p_stat, dBM_du0, dBM_dp0]
-global p_lb = [540.0, 19000.0, -0.55]
-global p_ub = [610.0, 52000.0, -0.5]
+p_lb = [540.0, 19000.0, -0.55]
+p_ub = [610.0, 52000.0, -0.5]
+est_bounds = [p_lb, p_ub]
 dt = 1.0
 est_tspan = 1.0
 est_t0 = 0.0
-est_tf = 100.0
-t_plot = est_tspan/2:dt:est_tf-dt-est_tspan/2
+est_tf = 5.0
+est_time_arr = [dt, est_tspan, est_t0, est_tf, c_step, s_step]
+t_plot = est_tspan/2:dt:est_tf-dt-est_tspan
 alpha_Iz = 0.005
 alpha_cs = 0.5
 alpha_cla = 0.0005
 gd_rate = [alpha_Iz, alpha_cs, alpha_cla]
 n_itr = 450
-estimated_params = est_param(gd_rate, n_itr, dt, est_tspan, est_t0, est_tf, spike_sol, dynp_est0, p_est)
+estimated_params = est_param(gd_rate, n_itr, est_bounds, est_time_arr, spike_sol, dynp_est0, p_stat)
 
+#=
+# Parameter Estimation Benchmarking and Profiling
+# Check type stability
+@code_warntype est_param(gd_rate, n_itr, est_bounds, est_time_arr, spike_sol, dynp_est0, p_stat)
+# Check profile
+@profile est_param(gd_rate, n_itr, est_bounds, est_time_arr, spike_sol, dynp_est0, p_stat)
+Juno.profiler()
+=#
+
+# Pick out estimated parameters
 estimated_Iz_vals = [estimated_params[i][1] for i in 1:length(estimated_params)]
 estimated_cs_vals = [estimated_params[i][2] for i in 1:length(estimated_params)]
 estimated_cla_vals = [estimated_params[i][3] for i in 1:length(estimated_params)]
 
+# Plot the true vs estimated parameters over time
 plot(spike_sol, vars=8, xlabel="t", ylabel="Iz", title="True vs Estimated Iz",
     label="true", legend= :topleft) # Iz
 plot!(t_plot, estimated_Iz_vals, label="est", linecolor="red")
-savefig("Pest Slower - True vs Estimated Iz.png")
+# savefig("Pest Slower - True vs Estimated Iz.png")
 
 plot(spike_sol, vars=9, xlabel="t", ylabel="Cornering Stiffness",
     title="True vs Estimated Cornering Stiffness", label = "true",
     legend = :topleft) # Cornering stiffness
 plot!(t_plot, estimated_cs_vals, label="est", linecolor="red")
-savefig("Pest Slower - True vs Estimated cs.png")
+# savefig("Pest Slower - True vs Estimated cs.png")
 
 plot(spike_sol, vars=10, xlabel="t", ylabel="Cla", title="True vs Estimated Cla",
     label="true", legend= :outerright)
 plot!(t_plot, estimated_cla_vals, label="est", linecolor="red")
-savefig("Pest Slower - True vs Estimated cla.png")
+# savefig("Pest Slower - True vs Estimated cla.png")
 
-
-# See how the parameter estimation does
+# Plot the xy trajectory of the true vs estimated solution
 plot(spike_sol, vars=(1,2), xlabel="x", ylabel="y", label = "true",
     legend = :bottomright)
 plot!(xlims=(-200,430),ylims=(-150,300), title="True Trajectory", legend=false)
 # savefig("Pest Slower - True Trajectory.png")
 
+# Compute and plot the xy trajectory of the estimated solution
 plot_est_dosetimes = est_t0:c_step:est_tf
 plot_est_affect!(integrator) = integrator.u[11:12] .= find_command(spike_sol, c_step, s_step, integrator.t)
 plot_est_cb = PresetTimeCallback(plot_est_dosetimes, plot_est_affect!)
 t_range = est_t0:dt:est_tf-est_tspan
 upcdp_est = zeros(30)
 plot_p_est = [p_stat, dBM_du0, dBM_dp0]
-plot([], xlabel="x", ylabel="y", title="Estimated XY Trajectory", legend=false)
+# plot([], xlabel="x", ylabel="y", title="Estimated XY Trajectory", legend=false)
+
+# Calculate the L2 loss
 L2_est = 0.0
 for i in 1:length(t_range)-1
     # Figure out the initial and end time
@@ -876,20 +990,18 @@ for i in 1:length(t_range)-1
     end
 end
 
+plot!(title="True vs Estimated XY Trajectory", legend=:bottomright,
+    xlims=(-200,430),ylims=(-150,250))
+# savefig("Pest Slower - True vs Estimated XY Trajectory.png")
+
+# Look at the L2 loss of the xy position for the estimated solution
 L2_est
 println(L2_est)
 
+# Look at the L2 loss of the static parameter solution
 L2_stat = 0.0
 stat_diff = stat_sol[1:2,:]-spike_sol[1:2,:]
 for d in 1:length(stat_sol)
     global L2_stat = L2_stat + sum(stat_diff[d].^2)
 end
 println(L2_stat)
-
-# plot!(title="Estimated XY Trajectory", legend=false,
-    # xlims=(-200,430),ylims=(-150,250))
-# savefig("Pest Slower - Estimated XY Trajectory.png")
-
-plot!(title="True vs Estimated XY Trajectory", legend=:bottomright,
-    xlims=(-200,430),ylims=(-150,250))
-# savefig("Pest Slower - True vs Estimated XY Trajectory.png")
